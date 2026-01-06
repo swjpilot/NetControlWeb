@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { authenticateToken, requireAdmin } = require('./auth');
+const EmailService = require('../utils/emailService');
 
 // Get all application settings (admin only)
 router.get('/', authenticateToken, requireAdmin, async (req, res) => {
@@ -54,6 +55,7 @@ router.put('/', authenticateToken, requireAdmin, async (req, res) => {
       smtp_host: { type: 'string', maxLength: 100 },
       smtp_port: { type: 'number', min: 1, max: 65535 },
       smtp_secure: { type: 'boolean' },
+      smtp_no_auth: { type: 'boolean' },
       smtp_username: { type: 'string', maxLength: 100 },
       smtp_password: { type: 'string', maxLength: 100 },
       smtp_from_email: { type: 'string', maxLength: 100 },
@@ -221,25 +223,37 @@ router.post('/test-qrz', authenticateToken, requireAdmin, async (req, res) => {
 // Test SMTP connection (admin only)
 router.post('/test-smtp', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { host, port, secure, username, password, fromEmail } = req.body;
+    const { host, port, secure, noAuth, username, password, fromEmail } = req.body;
     
-    if (!host || !port || !username || !password) {
-      return res.status(400).json({ error: 'SMTP configuration is incomplete' });
+    if (!host || !port) {
+      return res.status(400).json({ error: 'SMTP host and port are required' });
+    }
+    
+    // If authentication is required, validate username and password
+    if (!noAuth && (!username || !password)) {
+      return res.status(400).json({ error: 'Username and password are required when authentication is enabled' });
     }
     
     const nodemailer = require('nodemailer');
     
     try {
-      // Create transporter
-      const transporter = nodemailer.createTransport({
+      // Create transporter configuration
+      const transporterConfig = {
         host,
         port: parseInt(port),
-        secure: Boolean(secure),
-        auth: {
+        secure: Boolean(secure)
+      };
+      
+      // Only add auth if authentication is required
+      if (!noAuth && username && password) {
+        transporterConfig.auth = {
           user: username,
           pass: password
-        }
-      });
+        };
+      }
+      
+      // Create transporter
+      const transporter = nodemailer.createTransport(transporterConfig);
       
       // Verify connection
       await transporter.verify();
@@ -260,6 +274,41 @@ router.post('/test-smtp', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// Send test email (admin only)
+router.post('/send-test-email', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required' });
+    }
+    
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    
+    const emailService = new EmailService();
+    
+    try {
+      await emailService.sendTestEmail(email);
+      
+      res.json({ 
+        success: true, 
+        message: `Test email sent successfully to ${email}` 
+      });
+    } catch (emailError) {
+      res.json({ 
+        success: false, 
+        message: `Failed to send test email: ${emailError.message}` 
+      });
+    }
+  } catch (error) {
+    console.error('Error sending test email:', error);
+    res.status(500).json({ error: 'Failed to send test email' });
+  }
+});
+
 // Reset settings to defaults (admin only)
 router.post('/reset', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -270,13 +319,13 @@ router.post('/reset', authenticateToken, requireAdmin, async (req, res) => {
     if (category === 'qrz') {
       keysToDelete = ['qrz_username', 'qrz_password'];
     } else if (category === 'smtp') {
-      keysToDelete = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'];
+      keysToDelete = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'];
     } else if (category === 'all') {
       // Reset all non-system settings
       keysToDelete = [
         'qrz_username', 'qrz_password', 'app_name', 'app_description',
         'default_net_control', 'default_net_frequency', 'default_net_time',
-        'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name',
+        'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name',
         'default_grid_square', 'distance_unit', 'auto_backup_enabled', 'auto_backup_interval',
         'theme', 'items_per_page', 'session_timeout', 'require_password_change', 'min_password_length'
       ];

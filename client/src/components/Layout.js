@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import VersionFooter from './VersionFooter';
 
 const Layout = ({ children }) => {
   const location = useLocation();
@@ -163,6 +164,9 @@ const Layout = ({ children }) => {
               </div>
             )}
           </div>
+          
+          {/* Version Footer */}
+          <VersionFooter />
         </div>
       </aside>
       <main className="main-content">

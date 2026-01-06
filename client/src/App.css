@@ -50,6 +50,58 @@ body {
   border-top: 1px solid #34495e;
 }
 
+/* Version Footer */
+.version-footer {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #34495e;
+}
+
+.version-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #95a5a6;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.version-info:hover {
+  color: #ecf0f1;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.version-details {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  animation: fadeIn 0.2s ease-in;
+}
+
+.version-detail {
+  margin-bottom: 0.25rem;
+  color: #bdc3c7;
+}
+
+.version-detail:last-child {
+  margin-bottom: 0;
+}
+
+.version-detail strong {
+  color: #ecf0f1;
+  margin-right: 0.5rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .user-menu {
   position: relative;
 }
@@ -1249,6 +1301,32 @@ select.form-control::-moz-appearance {
   background-color: #238be6;
 }
 
+/* Dark theme version footer */
+[data-theme="dark"] .version-footer {
+  border-color: #21262d;
+}
+
+[data-theme="dark"] .version-info {
+  color: #7d8590;
+}
+
+[data-theme="dark"] .version-info:hover {
+  color: #e6edf3;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .version-details {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .version-detail {
+  color: #8b949e;
+}
+
+[data-theme="dark"] .version-detail strong {
+  color: #e6edf3;
+}
+
 [data-theme="dark"] .main-content {
   background-color: #0d1117;
 }
@@ -1655,6 +1733,32 @@ select.form-control::-moz-appearance {
   [data-theme="auto"] .sidebar .nav-link.active {
     color: #ffffff;
     background-color: #238be6;
+  }
+
+  /* Auto theme version footer */
+  [data-theme="auto"] .version-footer {
+    border-color: #21262d;
+  }
+
+  [data-theme="auto"] .version-info {
+    color: #7d8590;
+  }
+
+  [data-theme="auto"] .version-info:hover {
+    color: #e6edf3;
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  [data-theme="auto"] .version-details {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  [data-theme="auto"] .version-detail {
+    color: #8b949e;
+  }
+
+  [data-theme="auto"] .version-detail strong {
+    color: #e6edf3;
   }
   
   [data-theme="auto"] .main-content {
@@ -3084,4 +3188,68 @@ select.form-control::-moz-appearance {
   [data-theme="auto"] .modal-footer {
     border-color: #30363d;
   }
+}
+
+/* Map Modal Styles */
+.modal.show {
+  display: block !important;
+}
+
+.modal-dialog.modal-lg {
+  max-width: 800px;
+}
+
+/* Leaflet map container fixes */
+.leaflet-container {
+  height: 400px;
+  width: 100%;
+  z-index: 1;
+}
+
+/* Fix for leaflet in modal */
+.modal .leaflet-container {
+  z-index: 1050;
+}
+
+/* Map button styles */
+.btn-link.text-start {
+  text-align: left !important;
+  color: inherit !important;
+}
+
+.btn-link.text-start:hover {
+  color: var(--bs-primary) !important;
+}
+
+/* Ensure map renders properly */
+.leaflet-tile-pane {
+  z-index: 1;
+}
+
+.leaflet-overlay-pane {
+  z-index: 2;
+}
+
+.leaflet-shadow-pane {
+  z-index: 3;
+}
+
+.leaflet-marker-pane {
+  z-index: 4;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 5;
+}
+
+.leaflet-popup-pane {
+  z-index: 6;
+}
+
+.leaflet-map-pane canvas {
+  z-index: 1;
+}
+
+.leaflet-map-pane svg {
+  z-index: 2;
 }

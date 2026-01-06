@@ -265,6 +265,9 @@ class Database {
 
     console.log('Database tables created/verified');
     
+    // Run database migrations
+    this.runMigrations();
+    
     // Add a test session if no sessions exist (for debugging)
     this.db.get('SELECT COUNT(*) as count FROM sessions', (err, row) => {
       if (!err && row.count === 0) {
@@ -341,6 +344,63 @@ class Database {
         }
       });
     });
+  }
+
+  // Database migration system
+  async runMigrations() {
+    try {
+      // Create migrations table if it doesn't exist
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS migrations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          version TEXT UNIQUE,
+          description TEXT,
+          executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Define migrations
+      const migrations = [
+        {
+          version: '1.0.0',
+          description: 'Add smtp_no_auth setting support',
+          migrate: async () => {
+            // Check if smtp_no_auth setting exists, if not add default value
+            const existing = await this.get('SELECT value FROM settings WHERE key = ?', ['smtp_no_auth']);
+            if (!existing) {
+              await this.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ['smtp_no_auth', 'false']);
+              console.log('✅ Added smtp_no_auth setting (default: false)');
+            }
+          }
+        }
+        // Add future migrations here
+      ];
+
+      // Run pending migrations
+      for (const migration of migrations) {
+        const executed = await this.get('SELECT * FROM migrations WHERE version = ?', [migration.version]);
+        
+        if (!executed) {
+          console.log(`🔄 Running migration ${migration.version}: ${migration.description}`);
+          await migration.migrate();
+          await this.run('INSERT INTO migrations (version, description) VALUES (?, ?)', 
+            [migration.version, migration.description]);
+          console.log(`✅ Migration ${migration.version} completed`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Migration error:', error);
+    }
+  }
+
+  // Helper method to get settings with defaults
+  async getSettings(keys) {
+    const settings = {};
+    for (const key of keys) {
+      const row = await this.get('SELECT value FROM settings WHERE key = ?', [key]);
+      settings[key] = row ? row.value : null;
+    }
+    return settings;
   }
 }
 

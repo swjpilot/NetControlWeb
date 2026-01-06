@@ -13,7 +13,8 @@ import {
   Check,
   X,
   Loader,
-  AlertTriangle
+  AlertTriangle,
+  Send
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTheme } from '../contexts/ThemeContext';
@@ -133,6 +134,32 @@ const Settings = () => {
     }
   );
 
+  // Send test email mutation
+  const sendTestEmailMutation = useMutation(
+    (email) => axios.post('/api/settings/send-test-email', { email }),
+    {
+      onSuccess: (response) => {
+        setTestResults(prev => ({
+          ...prev,
+          testEmail: response.data
+        }));
+        if (response.data.success) {
+          toast.success(response.data.message);
+        } else {
+          toast.error(response.data.message);
+        }
+      },
+      onError: (error) => {
+        const message = error.response?.data?.error || 'Failed to send test email';
+        setTestResults(prev => ({
+          ...prev,
+          testEmail: { success: false, message }
+        }));
+        toast.error(message);
+      }
+    }
+  );
+
   // Reset settings mutation
   const resetSettingsMutation = useMutation(
     (category) => axios.post('/api/settings/reset', { category }),
@@ -169,7 +196,7 @@ const Settings = () => {
     const tabFields = {
       qrz: ['qrz_username', 'qrz_password'],
       app: ['app_name', 'app_description', 'default_net_control', 'default_net_frequency', 'default_net_time', 'default_grid_square', 'distance_unit'],
-      email: ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
+      email: ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
       database: ['auto_backup_enabled', 'auto_backup_interval'],
       ui: ['theme', 'items_per_page'],
       security: ['session_timeout', 'require_password_change', 'min_password_length']
@@ -204,17 +231,32 @@ const Settings = () => {
       host: emailForm.watch('smtp_host'),
       port: emailForm.watch('smtp_port'),
       secure: emailForm.watch('smtp_secure'),
+      noAuth: emailForm.watch('smtp_no_auth'),
       username: emailForm.watch('smtp_username'),
       password: emailForm.watch('smtp_password'),
       fromEmail: emailForm.watch('smtp_from_email')
     };
     
-    if (!smtpConfig.host || !smtpConfig.port || !smtpConfig.username || !smtpConfig.password) {
-      toast.error('Please fill in all SMTP configuration fields');
+    if (!smtpConfig.host || !smtpConfig.port) {
+      toast.error('Please fill in SMTP host and port');
+      return;
+    }
+    
+    if (!smtpConfig.noAuth && (!smtpConfig.username || !smtpConfig.password)) {
+      toast.error('Please fill in username and password, or enable "No authentication required"');
       return;
     }
     
     testSMTPMutation.mutate(smtpConfig);
+  };
+
+  const handleSendTestEmail = () => {
+    const email = prompt('Enter email address to send test email to:');
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sendTestEmailMutation.mutate(email);
+    } else if (email) {
+      toast.error('Please enter a valid email address');
+    }
   };
 
   const handleReset = (category) => {
@@ -474,6 +516,19 @@ const Settings = () => {
                         </button>
                         <button 
                           type="button"
+                          className="btn btn-outline-success btn-sm"
+                          onClick={handleSendTestEmail}
+                          disabled={sendTestEmailMutation.isLoading}
+                        >
+                          {sendTestEmailMutation.isLoading ? (
+                            <Loader size={14} className="animate-spin" />
+                          ) : (
+                            <Send size={14} />
+                          )}
+                          Send Test Email
+                        </button>
+                        <button 
+                          type="button"
                           className="btn btn-outline-danger btn-sm"
                           onClick={() => handleReset('smtp')}
                         >
@@ -492,6 +547,19 @@ const Settings = () => {
                             <X size={16} className="me-2 text-danger" />
                           )}
                           {testResults.smtp.message}
+                        </div>
+                      </div>
+                    )}
+
+                    {testResults.testEmail && (
+                      <div className={`alert ${testResults.testEmail.success ? 'alert-success' : 'alert-danger'} mb-3`}>
+                        <div className="d-flex align-items-center">
+                          {testResults.testEmail.success ? (
+                            <Check size={16} className="me-2 text-success" />
+                          ) : (
+                            <X size={16} className="me-2 text-danger" />
+                          )}
+                          {testResults.testEmail.message}
                         </div>
                       </div>
                     )}
@@ -530,26 +598,41 @@ const Settings = () => {
                       </div>
                     </div>
 
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label className="form-label">SMTP Username</label>
+                    <div className="form-group">
+                      <div className="form-check">
                         <input
-                          type="text"
-                          className="form-control"
-                          placeholder="your-email@gmail.com"
-                          {...currentForm.register('smtp_username')}
+                          type="checkbox"
+                          className="form-check-input"
+                          {...currentForm.register('smtp_no_auth')}
                         />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">SMTP Password</label>
-                        <input
-                          type="password"
-                          className="form-control"
-                          placeholder="Your email password or app password"
-                          {...currentForm.register('smtp_password')}
-                        />
+                        <label className="form-check-label">
+                          No authentication required (for local/internal mail servers)
+                        </label>
                       </div>
                     </div>
+
+                    {!currentForm.watch('smtp_no_auth') && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label className="form-label">SMTP Username</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="your-email@gmail.com"
+                            {...currentForm.register('smtp_username')}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">SMTP Password</label>
+                          <input
+                            type="password"
+                            className="form-control"
+                            placeholder="Your email password or app password"
+                            {...currentForm.register('smtp_password')}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     <div className="form-row">
                       <div className="form-group">

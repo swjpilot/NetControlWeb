@@ -16,6 +16,17 @@ rm -rf $DEPLOY_DIR
 mkdir -p $DEPLOY_DIR
 
 echo "📦 Building React client for production..."
+# Generate build number and version info
+BUILD_NUMBER=$(date +%Y%m%d_%H%M%S)
+echo "// Auto-generated version file - do not edit manually" > version.js
+echo "const version = {" >> version.js
+echo "  major: '1.0'," >> version.js
+echo "  build: '$BUILD_NUMBER'," >> version.js
+echo "  timestamp: '$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)'," >> version.js
+echo "  environment: process.env.NODE_ENV || 'production'" >> version.js
+echo "};" >> version.js
+echo "module.exports = version;" >> version.js
+
 cd client && npm run build && cd ..
 
 echo "📋 Copying server files..."
@@ -30,11 +41,15 @@ rm -f $DEPLOY_DIR/server/*.db
 echo "ℹ️  Database files excluded - will be created on first startup"
 cp package.json $DEPLOY_DIR/
 cp package-lock.json $DEPLOY_DIR/
+cp version.js $DEPLOY_DIR/
 
 echo "📋 Copying client build..."
 # Copy built client
 mkdir -p $DEPLOY_DIR/client
 cp -r client/build/ $DEPLOY_DIR/client/
+# Copy client package.json for reference
+cp client/package.json $DEPLOY_DIR/client/
+cp client/package-lock.json $DEPLOY_DIR/client/
 
 echo "📋 Copying configuration files..."
 # Copy configuration and deployment files
@@ -50,6 +65,22 @@ cp update-production.sh $DEPLOY_DIR/
 cp rollback-production.sh $DEPLOY_DIR/
 cp PRODUCTION.md $DEPLOY_DIR/
 cp UPDATE.md $DEPLOY_DIR/
+
+echo "📋 Copying documentation and setup files..."
+# Copy important documentation and setup files
+cp README.md $DEPLOY_DIR/
+cp README-DEPLOYMENT.md $DEPLOY_DIR/
+cp DEPLOYMENT.md $DEPLOY_DIR/
+cp .env.example $DEPLOY_DIR/
+cp EMAIL_SETUP.md $DEPLOY_DIR/
+cp VERSION_INFO.md $DEPLOY_DIR/
+cp DATABASE_MIGRATION_INFO.md $DEPLOY_DIR/
+
+# Copy additional deployment scripts
+cp server-setup.sh $DEPLOY_DIR/
+cp docker-deploy.sh $DEPLOY_DIR/
+cp cloud-deploy.sh $DEPLOY_DIR/
+cp verify-deployment.sh $DEPLOY_DIR/
 
 echo "📋 Creating deployment scripts..."
 # Create server deployment script
@@ -164,6 +195,17 @@ cat > $DEPLOY_DIR/INSTALL.md << 'EOF'
    - **IMPORTANT:** Change the default password immediately!
 
 **Note:** Each deployment starts with a fresh database. The default admin account will be created automatically on first startup.
+
+## Verify Deployment Package (Optional)
+
+Before deployment, you can verify the package contains all necessary files:
+
+```bash
+chmod +x verify-deployment.sh
+./verify-deployment.sh netcontrol-YYYYMMDD_HHMMSS.tar.gz
+```
+
+This will check for all critical files and provide a deployment readiness report.
 
 ## Optional: Setup with PM2 (Recommended for production)
 

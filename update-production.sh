@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# NetControl Production Update Script
+# NetControl Production Update Script - FIXED VERSION
 # This script updates an existing installation while preserving data
 
 set -e
@@ -131,6 +131,7 @@ else
     pkill -f "node.*server/index.js" 2>/dev/null || true
     if command -v pm2 &> /dev/null; then
         pm2 stop netcontrol 2>/dev/null || true
+        pm2 stop netcontrol-web 2>/dev/null || true
     fi
 fi
 
@@ -147,8 +148,16 @@ BACKUP_PATH="$BACKUP_DIR/$BACKUP_NAME"
 
 echo "📦 Backing up current installation to: $BACKUP_PATH"
 
-# Create full backup of current installation
-cp -r . "$BACKUP_PATH"
+# Create full backup of current installation (excluding the update package to save space)
+mkdir -p "$BACKUP_PATH"
+if command -v rsync &> /dev/null; then
+    rsync -av --exclude="$UPDATE_PACKAGE" --exclude="$BACKUP_DIR" --exclude="*.tar.gz" . "$BACKUP_PATH/"
+else
+    # Fallback to cp if rsync is not available
+    cp -r . "$BACKUP_PATH"
+    # Remove the update package from backup to save space
+    rm -f "$BACKUP_PATH/$UPDATE_PACKAGE" "$BACKUP_PATH"/*.tar.gz 2>/dev/null || true
+fi
 
 # Create separate database backup
 if [ -f "server/data/netcontrol.db" ]; then
@@ -170,13 +179,14 @@ mkdir -p "$TEMP_DATA_DIR"
 
 # Preserve database
 if [ -f "server/data/netcontrol.db" ]; then
-    cp "server/data/netcontrol.db" "$TEMP_DATA_DIR/"
+    mkdir -p "$TEMP_DATA_DIR/server/data"
+    cp "server/data/netcontrol.db" "$TEMP_DATA_DIR/server/data/"
     echo "✅ Database preserved"
 fi
 
 # Preserve uploads
 if [ -d "server/uploads" ]; then
-    cp -r "server/uploads" "$TEMP_DATA_DIR/"
+    cp -r "server/uploads" "$TEMP_DATA_DIR/server/"
     echo "✅ Uploads preserved"
 fi
 
@@ -192,6 +202,12 @@ if [ -f ".env" ]; then
     echo "✅ Environment file preserved"
 fi
 
+# Preserve any SSL certificates
+if [ -d "ssl" ]; then
+    cp -r "ssl" "$TEMP_DATA_DIR/"
+    echo "✅ SSL certificates preserved"
+fi
+
 # Step 4: Extract new package
 echo ""
 echo "4️⃣  Installing new version..."
@@ -205,28 +221,40 @@ if [ "$UPDATE_PACKAGE" != "$PACKAGE_BASENAME" ]; then
     UPDATE_PACKAGE="$PACKAGE_BASENAME"
 fi
 
-# Remove old files (except backups and preserved data)
+# Remove old files more safely (preserve important directories and files)
 echo "🗑️  Removing old installation files..."
-find . -maxdepth 1 -type f -name "*.js" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "*.json" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "*.md" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "*.sh" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "*.yml" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "*.conf" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "Dockerfile" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "ecosystem.config.js" -delete 2>/dev/null || true
-find . -maxdepth 1 -type f -name "netcontrol.service" -delete 2>/dev/null || true
 
-# Remove old directories (except backups and preserved data)
-rm -rf client server 2>/dev/null || true
+# Remove old application files but preserve important data
+for file in *.js *.json *.md *.sh *.yml *.yaml *.conf Dockerfile *.service .env.example; do
+    if [ -f "$file" ] && [ "$file" != "$UPDATE_PACKAGE" ]; then
+        rm -f "$file"
+    fi
+done
+
+# Remove old directories (except preserved ones)
+for dir in client server node_modules; do
+    if [ -d "$dir" ]; then
+        rm -rf "$dir"
+        echo "🗑️  Removed old $dir directory"
+    fi
+done
 
 echo "📦 Extracting new package..."
 tar -xzf "$UPDATE_PACKAGE"
 
 # Move files from extracted directory to current directory
 if [ -d "netcontrol" ]; then
-    mv netcontrol/* .
-    rmdir netcontrol
+    # Move files more carefully to avoid overwriting preserved data
+    for item in netcontrol/*; do
+        if [ -e "$item" ]; then
+            item_name=$(basename "$item")
+            # Don't overwrite backup directory
+            if [ "$item_name" != "$BACKUP_DIR" ]; then
+                mv "$item" .
+            fi
+        fi
+    done
+    rmdir netcontrol 2>/dev/null || true
 fi
 
 # Step 5: Restore preserved data
@@ -234,15 +262,16 @@ echo ""
 echo "5️⃣  Restoring user data..."
 
 # Restore database
-if [ -f "$TEMP_DATA_DIR/netcontrol.db" ]; then
+if [ -f "$TEMP_DATA_DIR/server/data/netcontrol.db" ]; then
     mkdir -p "server/data"
-    cp "$TEMP_DATA_DIR/netcontrol.db" "server/data/"
+    cp "$TEMP_DATA_DIR/server/data/netcontrol.db" "server/data/"
     echo "✅ Database restored"
 fi
 
 # Restore uploads
-if [ -d "$TEMP_DATA_DIR/uploads" ]; then
-    cp -r "$TEMP_DATA_DIR/uploads" "server/"
+if [ -d "$TEMP_DATA_DIR/server/uploads" ]; then
+    mkdir -p "server"
+    cp -r "$TEMP_DATA_DIR/server/uploads" "server/"
     echo "✅ Uploads restored"
 fi
 
@@ -258,6 +287,12 @@ if [ -f "$TEMP_DATA_DIR/.env" ]; then
     echo "✅ Environment file restored"
 fi
 
+# Restore SSL certificates
+if [ -d "$TEMP_DATA_DIR/ssl" ]; then
+    cp -r "$TEMP_DATA_DIR/ssl" "./"
+    echo "✅ SSL certificates restored"
+fi
+
 # Step 6: Set permissions
 echo ""
 echo "6️⃣  Setting permissions..."
@@ -265,7 +300,7 @@ chmod +x *.sh 2>/dev/null || true
 chmod 755 server/data 2>/dev/null || true
 chmod 644 server/data/netcontrol.db 2>/dev/null || true
 
-# Step 7: Install dependencies (if needed)
+# Step 7: Install dependencies
 echo ""
 echo "7️⃣  Installing dependencies..."
 if [ -f "deploy-server.sh" ]; then
@@ -273,7 +308,11 @@ if [ -f "deploy-server.sh" ]; then
     ./deploy-server.sh
 else
     echo "🔧 Installing Node.js dependencies..."
-    npm install --production
+    if [ -f "package.json" ]; then
+        npm install --production
+    else
+        echo "⚠️  No package.json found, skipping npm install"
+    fi
 fi
 
 # Step 8: Start the application
@@ -285,19 +324,35 @@ if [ "$APP_WAS_RUNNING" = true ]; then
         ./start-production.sh
     else
         echo "⚠️  start-production.sh not found, starting manually..."
-        NODE_ENV=production node server/index.js &
+        mkdir -p logs
+        NODE_ENV=production nohup node server/index.js > logs/app.log 2>&1 &
+        echo $! > .netcontrol.pid
     fi
     
     # Wait for application to start
-    sleep 5
+    echo "⏳ Waiting for application to start..."
+    sleep 10
     
     # Check if application started successfully
-    if curl -s http://localhost:5000/api/health > /dev/null 2>&1; then
-        echo "✅ Application started successfully"
-    else
-        echo "⚠️  Application may not have started correctly"
-        echo "Check logs or run: ./status-production.sh"
-    fi
+    MAX_RETRIES=6
+    RETRY_COUNT=0
+    
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if curl -s http://localhost:5000/api/health > /dev/null 2>&1; then
+            echo "✅ Application started successfully"
+            break
+        else
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⏳ Waiting for application... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+                sleep 5
+            else
+                echo "⚠️  Application may not have started correctly"
+                echo "Check logs: tail -f logs/app.log"
+                echo "Or run: ./status-production.sh"
+            fi
+        fi
+    done
 else
     echo "ℹ️  Application was not running before update, not starting automatically"
     echo "To start: ./start-production.sh"
@@ -327,7 +382,7 @@ echo "   ./stop-production.sh    - Stop application"
 echo "   ./start-production.sh   - Start application"
 echo ""
 echo "🔄 To rollback if needed:"
-echo "   ./stop-production.sh"
-echo "   rm -rf client server *.js *.json *.md *.sh *.yml *.conf Dockerfile ecosystem.config.js netcontrol.service"
-echo "   cp -r $BACKUP_PATH/* ."
-echo "   ./start-production.sh"
+echo "   ./rollback-production.sh"
+echo ""
+echo "📊 Check version:"
+echo "   curl http://localhost:5000/api/version"

@@ -42,6 +42,18 @@ const SessionDetail = () => {
   const [preCheckInData, setPreCheckInData] = useState(null);
   const [selectedPreCheckIns, setSelectedPreCheckIns] = useState(new Set());
   const callSignInputRef = useRef(null);
+  
+  // Traffic form specific states
+  const [fromCallSignInput, setFromCallSignInput] = useState('');
+  const [toCallSignInput, setToCallSignInput] = useState('');
+  const [showFromSuggestions, setShowFromSuggestions] = useState(false);
+  const [showToSuggestions, setShowToSuggestions] = useState(false);
+  const [filteredFromOperators, setFilteredFromOperators] = useState([]);
+  const [filteredToOperators, setFilteredToOperators] = useState([]);
+  const [selectedFromOperator, setSelectedFromOperator] = useState(null);
+  const [selectedToOperator, setSelectedToOperator] = useState(null);
+  const fromCallSignInputRef = useRef(null);
+  const toCallSignInputRef = useRef(null);
   const queryClient = useQueryClient();
 
   const participantForm = useForm();
@@ -78,11 +90,45 @@ const SessionDetail = () => {
     }
   }, [callSignInput, operators]);
 
+  // Filter FROM operators for traffic form
+  useEffect(() => {
+    if (fromCallSignInput.length >= 2) {
+      const filtered = operators.filter(op => 
+        op.call_sign.toUpperCase().includes(fromCallSignInput.toUpperCase())
+      ).slice(0, 10);
+      setFilteredFromOperators(filtered);
+      setShowFromSuggestions(filtered.length > 0);
+    } else {
+      setFilteredFromOperators([]);
+      setShowFromSuggestions(false);
+    }
+  }, [fromCallSignInput, operators]);
+
+  // Filter TO operators for traffic form
+  useEffect(() => {
+    if (toCallSignInput.length >= 2) {
+      const filtered = operators.filter(op => 
+        op.call_sign.toUpperCase().includes(toCallSignInput.toUpperCase())
+      ).slice(0, 10);
+      setFilteredToOperators(filtered);
+      setShowToSuggestions(filtered.length > 0);
+    } else {
+      setFilteredToOperators([]);
+      setShowToSuggestions(false);
+    }
+  }, [toCallSignInput, operators]);
+
   // Handle clicking outside to close suggestions
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (callSignInputRef.current && !callSignInputRef.current.contains(event.target)) {
         setShowSuggestions(false);
+      }
+      if (fromCallSignInputRef.current && !fromCallSignInputRef.current.contains(event.target)) {
+        setShowFromSuggestions(false);
+      }
+      if (toCallSignInputRef.current && !toCallSignInputRef.current.contains(event.target)) {
+        setShowToSuggestions(false);
       }
     };
 
@@ -172,6 +218,13 @@ const SessionDetail = () => {
         queryClient.invalidateQueries(['session', id]);
         toast.success('Traffic added successfully');
         trafficForm.reset();
+        // Clear traffic form state
+        setFromCallSignInput('');
+        setToCallSignInput('');
+        setSelectedFromOperator(null);
+        setSelectedToOperator(null);
+        setShowFromSuggestions(false);
+        setShowToSuggestions(false);
         setShowAddTraffic(false);
       },
       onError: (error) => {
@@ -612,6 +665,53 @@ const SessionDetail = () => {
     setQrzLookupData(null);
     participantForm.setValue('operator_id', '');
     participantForm.setValue('call_sign', '');
+  };
+
+  // Traffic form handlers
+  const handleFromCallSignInputChange = (e) => {
+    const value = e.target.value.toUpperCase();
+    setFromCallSignInput(value);
+    setSelectedFromOperator(null);
+    trafficForm.setValue('from_call', value);
+    trafficForm.setValue('from_operator_id', '');
+  };
+
+  const handleToCallSignInputChange = (e) => {
+    const value = e.target.value.toUpperCase();
+    setToCallSignInput(value);
+    setSelectedToOperator(null);
+    trafficForm.setValue('to_call', value);
+    trafficForm.setValue('to_operator_id', '');
+  };
+
+  const handleFromOperatorSelect = (operator) => {
+    setSelectedFromOperator(operator);
+    setFromCallSignInput(operator.call_sign);
+    setShowFromSuggestions(false);
+    trafficForm.setValue('from_operator_id', operator.id);
+    trafficForm.setValue('from_call', operator.call_sign);
+  };
+
+  const handleToOperatorSelect = (operator) => {
+    setSelectedToOperator(operator);
+    setToCallSignInput(operator.call_sign);
+    setShowToSuggestions(false);
+    trafficForm.setValue('to_operator_id', operator.id);
+    trafficForm.setValue('to_call', operator.call_sign);
+  };
+
+  const clearFromSelection = () => {
+    setSelectedFromOperator(null);
+    setFromCallSignInput('');
+    trafficForm.setValue('from_operator_id', '');
+    trafficForm.setValue('from_call', '');
+  };
+
+  const clearToSelection = () => {
+    setSelectedToOperator(null);
+    setToCallSignInput('');
+    trafficForm.setValue('to_operator_id', '');
+    trafficForm.setValue('to_call', '');
   };
 
   const handleFetchPreCheckIn = () => {
@@ -1234,57 +1334,173 @@ const SessionDetail = () => {
                     <form onSubmit={trafficForm.handleSubmit(onSubmitTraffic)}>
                       <div className="form-row">
                         <div className="form-group">
-                          <label className="form-label">From (Operator)</label>
-                          <select 
-                            className="form-control"
-                            {...trafficForm.register('from_operator_id')}
-                          >
-                            <option value="">Select operator</option>
-                            {operators.map(op => (
-                              <option key={op.id} value={op.id}>
-                                {op.call_sign} {op.name && `- ${op.name}`}
-                              </option>
-                            ))}
-                          </select>
+                          <label className="form-label">From Call Sign / Operator Search</label>
+                          <div className="autocomplete-container" ref={fromCallSignInputRef}>
+                            <div className="input-group">
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Type call sign to search operators or enter new..."
+                                value={fromCallSignInput}
+                                onChange={handleFromCallSignInputChange}
+                                onFocus={() => {
+                                  if (filteredFromOperators.length > 0) {
+                                    setShowFromSuggestions(true);
+                                  }
+                                }}
+                                style={{ textTransform: 'uppercase' }}
+                              />
+                              {(selectedFromOperator || fromCallSignInput) && (
+                                <button 
+                                  type="button"
+                                  className="btn btn-outline-secondary"
+                                  onClick={clearFromSelection}
+                                  title="Clear selection"
+                                >
+                                  <X size={16} />
+                                </button>
+                              )}
+                            </div>
+                            
+                            {/* Autocomplete Suggestions */}
+                            {showFromSuggestions && filteredFromOperators.length > 0 && (
+                              <div className="autocomplete-suggestions">
+                                {filteredFromOperators.map(operator => (
+                                  <div
+                                    key={operator.id}
+                                    className="autocomplete-suggestion"
+                                    onClick={() => handleFromOperatorSelect(operator)}
+                                  >
+                                    <div className="d-flex align-items-center">
+                                      <Radio size={14} className="text-primary me-2" />
+                                      <div>
+                                        <strong>{operator.call_sign}</strong>
+                                        {operator.name && (
+                                          <span className="text-muted ms-2">- {operator.name}</span>
+                                        )}
+                                        {operator.location && (
+                                          <div className="small text-muted">{operator.location}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {/* Selected Operator Display */}
+                            {selectedFromOperator && (
+                              <div className="selected-operator mt-2">
+                                <div className="alert alert-success mb-0">
+                                  <div className="d-flex align-items-center">
+                                    <User size={16} className="me-2" />
+                                    <div>
+                                      <strong>{selectedFromOperator.call_sign}</strong>
+                                      {selectedFromOperator.name && (
+                                        <span className="ms-2">- {selectedFromOperator.name}</span>
+                                      )}
+                                      {selectedFromOperator.location && (
+                                        <div className="small">{selectedFromOperator.location}</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div className="form-text">
+                              Type 2+ characters to search existing operators, or enter any call sign.
+                            </div>
+                          </div>
+                          
+                          {/* Hidden form fields for react-hook-form */}
+                          <input type="hidden" {...trafficForm.register('from_operator_id')} />
+                          <input type="hidden" {...trafficForm.register('from_call')} />
                         </div>
                         
                         <div className="form-group">
-                          <label className="form-label">Or From Call</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="e.g., W1AW"
-                            style={{ textTransform: 'uppercase' }}
-                            {...trafficForm.register('from_call')}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="form-row">
-                        <div className="form-group">
-                          <label className="form-label">To (Operator)</label>
-                          <select 
-                            className="form-control"
-                            {...trafficForm.register('to_operator_id')}
-                          >
-                            <option value="">Select operator</option>
-                            {operators.map(op => (
-                              <option key={op.id} value={op.id}>
-                                {op.call_sign} {op.name && `- ${op.name}`}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        
-                        <div className="form-group">
-                          <label className="form-label">Or To Call</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="e.g., W1AW"
-                            style={{ textTransform: 'uppercase' }}
-                            {...trafficForm.register('to_call')}
-                          />
+                          <label className="form-label">To Call Sign / Operator Search</label>
+                          <div className="autocomplete-container" ref={toCallSignInputRef}>
+                            <div className="input-group">
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Type call sign to search operators or enter new..."
+                                value={toCallSignInput}
+                                onChange={handleToCallSignInputChange}
+                                onFocus={() => {
+                                  if (filteredToOperators.length > 0) {
+                                    setShowToSuggestions(true);
+                                  }
+                                }}
+                                style={{ textTransform: 'uppercase' }}
+                              />
+                              {(selectedToOperator || toCallSignInput) && (
+                                <button 
+                                  type="button"
+                                  className="btn btn-outline-secondary"
+                                  onClick={clearToSelection}
+                                  title="Clear selection"
+                                >
+                                  <X size={16} />
+                                </button>
+                              )}
+                            </div>
+                            
+                            {/* Autocomplete Suggestions */}
+                            {showToSuggestions && filteredToOperators.length > 0 && (
+                              <div className="autocomplete-suggestions">
+                                {filteredToOperators.map(operator => (
+                                  <div
+                                    key={operator.id}
+                                    className="autocomplete-suggestion"
+                                    onClick={() => handleToOperatorSelect(operator)}
+                                  >
+                                    <div className="d-flex align-items-center">
+                                      <Radio size={14} className="text-primary me-2" />
+                                      <div>
+                                        <strong>{operator.call_sign}</strong>
+                                        {operator.name && (
+                                          <span className="text-muted ms-2">- {operator.name}</span>
+                                        )}
+                                        {operator.location && (
+                                          <div className="small text-muted">{operator.location}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {/* Selected Operator Display */}
+                            {selectedToOperator && (
+                              <div className="selected-operator mt-2">
+                                <div className="alert alert-success mb-0">
+                                  <div className="d-flex align-items-center">
+                                    <User size={16} className="me-2" />
+                                    <div>
+                                      <strong>{selectedToOperator.call_sign}</strong>
+                                      {selectedToOperator.name && (
+                                        <span className="ms-2">- {selectedToOperator.name}</span>
+                                      )}
+                                      {selectedToOperator.location && (
+                                        <div className="small">{selectedToOperator.location}</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div className="form-text">
+                              Type 2+ characters to search existing operators, or enter any call sign.
+                            </div>
+                          </div>
+                          
+                          {/* Hidden form fields for react-hook-form */}
+                          <input type="hidden" {...trafficForm.register('to_operator_id')} />
+                          <input type="hidden" {...trafficForm.register('to_call')} />
                         </div>
                       </div>
 
@@ -1352,6 +1568,13 @@ const SessionDetail = () => {
                           onClick={() => {
                             setShowAddTraffic(false);
                             trafficForm.reset();
+                            // Clear traffic form state
+                            setFromCallSignInput('');
+                            setToCallSignInput('');
+                            setSelectedFromOperator(null);
+                            setSelectedToOperator(null);
+                            setShowFromSuggestions(false);
+                            setShowToSuggestions(false);
                           }}
                         >
                           Cancel

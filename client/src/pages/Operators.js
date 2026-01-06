@@ -13,11 +13,13 @@ import {
   Calendar,
   MessageSquare,
   Loader,
-  Filter
+  Filter,
+  Map
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import OperatorMap from '../components/OperatorMap';
 
 const Operators = () => {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -29,6 +31,8 @@ const Operators = () => {
   const [itemsPerPage, setItemsPerPage] = useState(() => {
     return parseInt(localStorage.getItem('netcontrol_items_per_page')) || 25;
   });
+  const [mapOperator, setMapOperator] = useState(null);
+  const [showMap, setShowMap] = useState(false);
   const queryClient = useQueryClient();
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm();
@@ -197,6 +201,22 @@ const Operators = () => {
   const handlePageChange = (page) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleShowMap = (operator) => {
+    // Check if operator has address information
+    if (!operator.street && !operator.location) {
+      toast.error('No address information available for this operator');
+      return;
+    }
+    
+    setMapOperator(operator);
+    setShowMap(true);
+  };
+
+  const handleCloseMap = () => {
+    setShowMap(false);
+    setMapOperator(null);
   };
 
   // Reset page when search/filter changes
@@ -491,10 +511,23 @@ const Operators = () => {
                         <td>
                           <div>
                             {operator.location && (
-                              <div className="small">{operator.location}</div>
+                              <div className="small">
+                                <button
+                                  className="btn btn-link p-0 text-start text-decoration-none"
+                                  onClick={() => handleShowMap(operator)}
+                                  disabled={!operator.street && !operator.location}
+                                  title="Show on map"
+                                >
+                                  <MapPin size={12} className="me-1 text-primary" />
+                                  {operator.location}
+                                </button>
+                              </div>
                             )}
                             {operator.street && (
                               <div className="text-muted small">{operator.street}</div>
+                            )}
+                            {!operator.location && !operator.street && (
+                              <span className="text-muted small">No address</span>
                             )}
                           </div>
                         </td>
@@ -533,13 +566,24 @@ const Operators = () => {
                               className="btn btn-sm btn-outline-primary"
                               onClick={() => handleEdit(operator)}
                               disabled={updateOperatorMutation.isLoading}
+                              title="Edit operator"
                             >
                               <Edit size={14} />
                             </button>
+                            {(operator.street || operator.location) && (
+                              <button 
+                                className="btn btn-sm btn-outline-info"
+                                onClick={() => handleShowMap(operator)}
+                                title="Show on map"
+                              >
+                                <Map size={14} />
+                              </button>
+                            )}
                             <button 
                               className="btn btn-sm btn-outline-danger"
                               onClick={() => handleDelete(operator)}
                               disabled={deleteOperatorMutation.isLoading}
+                              title="Delete operator"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -627,6 +671,13 @@ const Operators = () => {
           )}
         </div>
       </div>
+
+      {/* Operator Map Modal */}
+      <OperatorMap 
+        operator={mapOperator}
+        isOpen={showMap}
+        onClose={handleCloseMap}
+      />
     </div>
   );
 };

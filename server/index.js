@@ -71,6 +71,23 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Version information
+app.get('/api/version', (req, res) => {
+  try {
+    const version = require('../version');
+    res.json(version);
+  } catch (error) {
+    // Fallback if version file doesn't exist
+    const packageJson = require('../package.json');
+    res.json({
+      major: packageJson.version,
+      build: new Date().toISOString().slice(0, 10).replace(/-/g, ''),
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development'
+    });
+  }
+});
+
 // Serve React app in production
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {

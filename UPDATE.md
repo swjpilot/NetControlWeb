@@ -67,6 +67,7 @@ curl http://localhost:5000/api/health
 
 5. **Data Restoration**
    - Restores preserved database
+   - Runs database migrations for new features
    - Restores user uploads
    - Restores application logs
    - Restores custom configurations
@@ -163,6 +164,18 @@ After updating, verify these components:
 ```bash
 # Check if database exists and is accessible
 ls -la server/data/netcontrol.db
+
+# Check migration status (new in this version)
+node -e "
+const db = require('./server/database/db');
+db.init();
+setTimeout(async () => {
+  const migrations = await db.all('SELECT * FROM migrations ORDER BY executed_at');
+  console.log('Applied migrations:', migrations);
+  await db.close();
+  process.exit(0);
+}, 1000);
+"
 
 # Test database connection (application should start without errors)
 ./start-production.sh

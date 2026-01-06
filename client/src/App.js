@@ -8,6 +8,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import 'leaflet/dist/leaflet.css';
 import FCCDatabase from './pages/FCCDatabase';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
