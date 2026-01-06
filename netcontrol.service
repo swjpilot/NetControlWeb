@@ -1,0 +1,29 @@
+[Unit]
+Description=NetControl Web Application
+Documentation=https://github.com/your-repo/netcontrol-web
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/netcontrol
+Environment=NODE_ENV=production
+Environment=PORT=5000
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutStopSec=5
+SyslogIdentifier=netcontrol-web
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/netcontrol/server/database
+ReadWritePaths=/opt/netcontrol/logs
+
+[Install]
+WantedBy=multi-user.target
