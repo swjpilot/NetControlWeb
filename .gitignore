@@ -1,2 +1,7 @@
 client/node_modules
 node_modules
+
+# Database files
+*.db
+server/data/
+server/database.db
