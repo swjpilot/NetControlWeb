@@ -1,0 +1,62 @@
+# Elastic Beanstalk ignore file
+.git/
+.gitignore
+README.md
+docs/
+*.md
+!INSTALL.md
+
+# Development files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Node modules (will be installed on deployment)
+node_modules/
+client/node_modules/
+
+# Build artifacts that will be rebuilt
+client/build/
+
+# Development and testing
+*.test.js
+*.spec.js
+test/
+tests/
+__tests__/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database files (will be created fresh)
+server/database.db
+server/data/*.db
+server/data/*.db-*
+
+# Uploads and downloads (user data)
+server/uploads/
+server/downloads/
+
+# Deployment packages
+*.tar.gz
+netcontrol-*/
+
+# Local development scripts
+troubleshoot-installation.sh
+remote-diagnostics.sh
