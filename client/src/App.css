@@ -3311,6 +3311,9 @@ select.form-control::-moz-appearance {
     transition: left 0.3s ease-in-out !important;
     overflow-y: auto !important;
     transform: none !important; /* Override any transform rules */
+    display: flex !important;
+    flex-direction: column !important;
+    padding-bottom: 0 !important; /* Remove bottom padding to let footer stick */
   }
 
   .sidebar.sidebar-open {
@@ -3515,10 +3518,32 @@ select.form-control::-moz-appearance {
   /* Version footer */
   .version-footer {
     padding: 0.5rem;
+    position: sticky;
+    bottom: 0;
+    background: #2c3e50;
+    margin-top: auto;
   }
 
   .version-info {
     font-size: 0.75rem;
+  }
+
+  /* Ensure sidebar footer is always visible */
+  .sidebar-footer {
+    flex-shrink: 0;
+    margin-top: auto;
+  }
+
+  /* Make sure sidebar has proper flex layout on mobile */
+  .sidebar {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  /* Ensure nav menu can scroll but footer stays at bottom */
+  .sidebar nav {
+    flex: 1;
+    overflow-y: auto;
   }
 }
 

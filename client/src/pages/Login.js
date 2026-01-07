@@ -10,6 +10,8 @@ import {
   EyeOff,
   Loader
 } from 'lucide-react';
+import './Login.css';
+import HamRadioBackground from '../assets/HamRadio.jpeg';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -46,13 +48,18 @@ const Login = () => {
   };
 
   return (
-    <div className="login-container">
+    <div 
+      className="login-container"
+      style={{
+        backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6)), url(${HamRadioBackground})`
+      }}
+    >
       <div className="login-card">
         <div className="login-header">
           <div className="login-logo">
             <Radio size={48} className="text-primary" />
           </div>
-          <h1>NetControl</h1>
+          <h1 className="login-title">NetControl</h1>
           <p>Ham Radio Net Management</p>
         </div>
 
@@ -72,6 +79,10 @@ const Login = () => {
                 onChange={handleChange}
                 required
                 autoFocus
+                style={{ 
+                  color: '#2d3748', 
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)' 
+                }}
               />
             </div>
           </div>
@@ -90,6 +101,10 @@ const Login = () => {
                 value={formData.password}
                 onChange={handleChange}
                 required
+                style={{ 
+                  color: '#2d3748', 
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)' 
+                }}
               />
               <button
                 type="button"
@@ -123,110 +138,13 @@ const Login = () => {
             <a 
               href="/forgot-password" 
               className="text-decoration-none small"
-              style={{ color: '#6c757d' }}
+              style={{ color: '#4a5568' }}
             >
               Forgot your password?
             </a>
           </div>
         </form>
       </div>
-
-      <style jsx>{`
-        .login-container {
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          padding: 1rem;
-        }
-
-        .login-card {
-          background: white;
-          border-radius: 12px;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-          padding: 2rem;
-          width: 100%;
-          max-width: 400px;
-        }
-
-        .login-header {
-          text-align: center;
-          margin-bottom: 2rem;
-        }
-
-        .login-logo {
-          margin-bottom: 1rem;
-        }
-
-        .login-header h1 {
-          font-size: 2rem;
-          font-weight: 700;
-          color: #2c3e50;
-          margin: 0 0 0.5rem 0;
-        }
-
-        .login-header p {
-          color: #6c757d;
-          margin: 0;
-        }
-
-        .login-form {
-          margin-bottom: 2rem;
-        }
-
-        .input-group-button {
-          background: none;
-          border: none;
-          padding: 0.5rem 0.75rem;
-          color: #6c757d;
-          cursor: pointer;
-          border-left: 1px solid #ced4da;
-        }
-
-        .input-group-button:hover {
-          color: #495057;
-        }
-
-        .login-footer {
-          border-top: 1px solid #e9ecef;
-          padding-top: 1.5rem;
-        }
-
-        .login-info {
-          background: #f8f9fa;
-          border-radius: 8px;
-          padding: 1rem;
-          text-align: center;
-        }
-
-        .login-info h4 {
-          font-size: 1rem;
-          font-weight: 600;
-          color: #495057;
-          margin: 0 0 0.5rem 0;
-        }
-
-        .login-info p {
-          margin: 0.25rem 0;
-          font-size: 0.875rem;
-        }
-
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        @media (max-width: 480px) {
-          .login-card {
-            padding: 1.5rem;
-          }
-        }
-      `}</style>
     </div>
   );
 };

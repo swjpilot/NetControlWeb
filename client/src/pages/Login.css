@@ -1,0 +1,209 @@
+/* Login Page Styles */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  padding: 1rem;
+}
+
+.login-card {
+  background: rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  border-radius: 16px !important;
+  box-shadow: 
+    0 25px 50px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.3) !important;
+  padding: 2.5rem !important;
+  width: 100% !important;
+  max-width: 420px !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  animation: fadeInUp 0.6s ease-out !important;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-logo {
+  margin-bottom: 1rem;
+}
+
+.login-logo .text-primary {
+  color: #3182ce !important;
+}
+
+.login-header h1,
+.login-title {
+  font-size: 2.2rem !important;
+  font-weight: 700 !important;
+  color: #1a202c !important;
+  margin: 0 0 0.5rem 0 !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.login-header p {
+  color: #ffffff !important;
+  margin: 0;
+  font-weight: 500;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.login-form {
+  margin-bottom: 2rem;
+}
+
+.form-label {
+  color: #2d3748 !important;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.form-control {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.form-control:focus {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #3182ce !important;
+  box-shadow: 0 0 0 0.2rem rgba(49, 130, 206, 0.25) !important;
+}
+
+.form-control::placeholder {
+  color: #a0aec0 !important;
+  opacity: 1 !important;
+}
+
+.input-group-text {
+  background-color: rgba(247, 250, 252, 0.9) !important;
+  border-color: #e2e8f0 !important;
+  color: #4a5568 !important;
+}
+
+.input-group-button {
+  background: none !important;
+  border: none !important;
+  padding: 0.5rem 0.75rem;
+  color: #4a5568 !important;
+  cursor: pointer;
+  border-left: 1px solid #ced4da !important;
+}
+
+.input-group-button:hover {
+  color: #2d3748 !important;
+}
+
+.login-footer {
+  border-top: 1px solid #e9ecef;
+  padding-top: 1.5rem;
+}
+
+.login-info {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.login-info h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #495057;
+  margin: 0 0 0.5rem 0;
+}
+
+.login-info p {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .login-container {
+    background-attachment: scroll;
+  }
+  
+  .login-card {
+    padding: 1.5rem !important;
+    margin: 1rem;
+    background: rgba(255, 255, 255, 0.25) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+  }
+}
+
+/* Additional overrides for form inputs */
+.login-card input[type="text"],
+.login-card input[type="password"] {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.login-card input[type="text"]:focus,
+.login-card input[type="password"]:focus {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Override any Bootstrap or global styles */
+.login-card .form-control,
+.login-card .form-control:focus,
+.login-card .form-control:active,
+.login-card .input-group .form-control,
+.login-card .input-group .form-control:focus,
+.login-card .input-group .form-control:active {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* Target Bootstrap's specific selectors */
+.form-control {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.form-control:focus {
+  color: #2d3748 !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #3182ce !important;
+  box-shadow: 0 0 0 0.2rem rgba(49, 130, 206, 0.25) !important;
+}
+
+/* Ensure button text is visible */
+.login-card .btn {
+  color: white !important;
+}
+
+.login-card .btn:hover {
+  color: white !important;
+}

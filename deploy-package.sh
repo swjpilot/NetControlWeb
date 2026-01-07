@@ -50,6 +50,7 @@ cp -r client/build/ $DEPLOY_DIR/client/
 # Copy client package.json for reference
 cp client/package.json $DEPLOY_DIR/client/
 cp client/package-lock.json $DEPLOY_DIR/client/
+# Background image is now included in the build automatically via webpack
 
 echo "📋 Copying configuration files..."
 # Copy configuration and deployment files
@@ -63,8 +64,6 @@ cp stop-production.sh $DEPLOY_DIR/
 cp status-production.sh $DEPLOY_DIR/
 cp update-production.sh $DEPLOY_DIR/
 cp rollback-production.sh $DEPLOY_DIR/
-cp PRODUCTION.md $DEPLOY_DIR/
-cp UPDATE.md $DEPLOY_DIR/
 
 echo "📋 Copying documentation and setup files..."
 # Copy important documentation and setup files
