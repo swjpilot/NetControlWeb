@@ -118,6 +118,16 @@ const Login = () => {
               </>
             )}
           </button>
+
+          <div className="text-center mt-3">
+            <a 
+              href="/forgot-password" 
+              className="text-decoration-none small"
+              style={{ color: '#6c757d' }}
+            >
+              Forgot your password?
+            </a>
+          </div>
         </form>
       </div>
 

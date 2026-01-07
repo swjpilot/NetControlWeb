@@ -223,7 +223,7 @@ router.post('/test-qrz', authenticateToken, requireAdmin, async (req, res) => {
 // Test SMTP connection (admin only)
 router.post('/test-smtp', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { host, port, secure, noAuth, username, password, fromEmail } = req.body;
+    const { host, port, secure, starttls, noAuth, username, password, fromEmail } = req.body;
     
     if (!host || !port) {
       return res.status(400).json({ error: 'SMTP host and port are required' });
@@ -243,6 +243,15 @@ router.post('/test-smtp', authenticateToken, requireAdmin, async (req, res) => {
         port: parseInt(port),
         secure: Boolean(secure)
       };
+      
+      // Add STARTTLS support
+      if (starttls) {
+        transporterConfig.requireTLS = true;
+        transporterConfig.tls = {
+          // Allow self-signed certificates for internal servers
+          rejectUnauthorized: false
+        };
+      }
       
       // Only add auth if authentication is required
       if (!noAuth && username && password) {
@@ -288,6 +297,7 @@ router.post('/send-test-email', authenticateToken, requireAdmin, async (req, res
       return res.status(400).json({ error: 'Invalid email format' });
     }
     
+    const EmailService = require('../utils/emailService');
     const emailService = new EmailService();
     
     try {
@@ -298,6 +308,7 @@ router.post('/send-test-email', authenticateToken, requireAdmin, async (req, res
         message: `Test email sent successfully to ${email}` 
       });
     } catch (emailError) {
+      console.error('Test email error details:', emailError);
       res.json({ 
         success: false, 
         message: `Failed to send test email: ${emailError.message}` 
@@ -306,6 +317,79 @@ router.post('/send-test-email', authenticateToken, requireAdmin, async (req, res
   } catch (error) {
     console.error('Error sending test email:', error);
     res.status(500).json({ error: 'Failed to send test email' });
+  }
+});
+
+// Diagnose email configuration (admin only)
+router.get('/diagnose-email', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const EmailService = require('../utils/emailService');
+    const emailService = new EmailService();
+    
+    // Get current settings
+    const settings = await emailService.getEmailSettings();
+    
+    // Create diagnostic info (without exposing sensitive data)
+    const diagnostics = {
+      smtp_configured: !!(settings.smtp_host && settings.smtp_port),
+      smtp_host: settings.smtp_host || 'Not configured',
+      smtp_port: settings.smtp_port || 'Not configured',
+      smtp_secure: settings.smtp_secure || false,
+      smtp_starttls: settings.smtp_starttls || false,
+      smtp_no_auth: settings.smtp_no_auth || false,
+      has_username: !!settings.smtp_username,
+      has_password: !!settings.smtp_password,
+      from_email_configured: !!settings.smtp_from_email,
+      from_name_configured: !!settings.smtp_from_name,
+      auth_required: !settings.smtp_no_auth,
+      auth_configured: !!(settings.smtp_username && settings.smtp_password)
+    };
+    
+    // Check for common configuration issues
+    const issues = [];
+    
+    if (!settings.smtp_host) {
+      issues.push('SMTP host is not configured');
+    }
+    
+    if (!settings.smtp_port) {
+      issues.push('SMTP port is not configured');
+    }
+    
+    if (!settings.smtp_no_auth && (!settings.smtp_username || !settings.smtp_password)) {
+      issues.push('Authentication is required but username or password is missing');
+    }
+    
+    if (!settings.smtp_from_email) {
+      issues.push('From email address is not configured');
+    }
+    
+    if (settings.smtp_secure && settings.smtp_starttls) {
+      issues.push('Both SSL/TLS and STARTTLS are enabled - typically only one should be used');
+    }
+    
+    if (settings.smtp_port == 465 && !settings.smtp_secure) {
+      issues.push('Port 465 typically requires SSL/TLS to be enabled');
+    }
+    
+    if (settings.smtp_port == 587 && !settings.smtp_starttls && !settings.smtp_secure) {
+      issues.push('Port 587 typically requires STARTTLS or SSL/TLS to be enabled');
+    }
+    
+    res.json({
+      diagnostics,
+      issues,
+      recommendations: [
+        'For Gmail: Use port 587 with STARTTLS enabled',
+        'For Outlook: Use port 587 with STARTTLS enabled', 
+        'For internal servers: Use port 25 with no authentication',
+        'Always test configuration after making changes'
+      ]
+    });
+    
+  } catch (error) {
+    console.error('Error diagnosing email configuration:', error);
+    res.status(500).json({ error: 'Failed to diagnose email configuration' });
   }
 });
 

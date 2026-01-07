@@ -1,9 +1,9 @@
 const nodemailer = require('nodemailer');
-const Database = require('../database/db');
+const db = require('../database/db');
 
 class EmailService {
   constructor() {
-    this.db = new Database();
+    this.db = db;
   }
 
   async getEmailSettings() {
@@ -12,6 +12,7 @@ class EmailService {
         'smtp_host',
         'smtp_port', 
         'smtp_secure',
+        'smtp_starttls',
         'smtp_no_auth',
         'smtp_username',
         'smtp_password',
@@ -22,6 +23,7 @@ class EmailService {
       // Convert string values to appropriate types
       if (settings.smtp_port) settings.smtp_port = parseInt(settings.smtp_port);
       if (settings.smtp_secure) settings.smtp_secure = settings.smtp_secure === 'true';
+      if (settings.smtp_starttls) settings.smtp_starttls = settings.smtp_starttls === 'true';
       if (settings.smtp_no_auth) settings.smtp_no_auth = settings.smtp_no_auth === 'true';
       
       return settings;
@@ -35,6 +37,17 @@ class EmailService {
     try {
       const settings = await this.getEmailSettings();
       
+      console.log('Creating email transporter with settings:', {
+        host: settings.smtp_host,
+        port: settings.smtp_port,
+        secure: settings.smtp_secure,
+        starttls: settings.smtp_starttls,
+        no_auth: settings.smtp_no_auth,
+        has_username: !!settings.smtp_username,
+        has_password: !!settings.smtp_password,
+        from_email: settings.smtp_from_email
+      });
+      
       if (!settings.smtp_host || !settings.smtp_port) {
         throw new Error('SMTP host and port are not configured');
       }
@@ -45,15 +58,27 @@ class EmailService {
         secure: settings.smtp_secure || false
       };
 
+      // Add STARTTLS support
+      if (settings.smtp_starttls) {
+        transporterConfig.requireTLS = true;
+        transporterConfig.tls = {
+          // Allow self-signed certificates for internal servers
+          rejectUnauthorized: false
+        };
+      }
+
       // Only add authentication if not disabled
       if (!settings.smtp_no_auth && settings.smtp_username && settings.smtp_password) {
         transporterConfig.auth = {
           user: settings.smtp_username,
           pass: settings.smtp_password
         };
+        console.log('Using SMTP authentication');
+      } else {
+        console.log('SMTP authentication disabled or credentials missing');
       }
 
-      return nodemailer.createTransporter(transporterConfig);
+      return nodemailer.createTransport(transporterConfig);
     } catch (error) {
       console.error('Error creating email transporter:', error);
       throw error;

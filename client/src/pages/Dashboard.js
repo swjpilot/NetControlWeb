@@ -65,38 +65,38 @@ const Dashboard = () => {
 
   return (
     <div>
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h1>NetControl Dashboard</h1>
-        <div className="d-flex gap-2">
-          <Link to="/sessions" className="btn btn-primary">
-            <Calendar size={16} />
-            View Sessions
-          </Link>
-          <Link to="/qrz" className="btn btn-secondary">
-            <Radio size={16} />
-            QRZ Lookup
-          </Link>
+      <div className="page-header mb-3">
+        <div className="page-header-content">
+          <h1>NetControl Dashboard</h1>
+          <div className="page-header-actions">
+            <Link to="/sessions" className="btn btn-primary">
+              <Calendar size={16} />
+              <span className="d-none d-sm-inline ms-1">View Sessions</span>
+            </Link>
+            <Link to="/qrz" className="btn btn-secondary">
+              <Radio size={16} />
+              <span className="d-none d-sm-inline ms-1">QRZ Lookup</span>
+            </Link>
+          </div>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="row mb-4">
+      <div className="stats-grid mb-4">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <div key={index} className="col-md-3">
-              <Link to={stat.link} className="stats-card">
-                <div className="stats-card-content">
-                  <div className="stats-card-info">
-                    <h3>{stat.value}</h3>
-                    <p>{stat.title}</p>
-                  </div>
-                  <div className="stats-card-icon">
-                    <Icon size={32} className={stat.color} />
-                  </div>
+            <Link key={index} to={stat.link} className="stats-card">
+              <div className="stats-card-content">
+                <div className="stats-card-info">
+                  <h3>{stat.value}</h3>
+                  <p>{stat.title}</p>
                 </div>
-              </Link>
-            </div>
+                <div className="stats-card-icon">
+                  <Icon size={32} className={stat.color} />
+                </div>
+              </div>
+            </Link>
           );
         })}
       </div>

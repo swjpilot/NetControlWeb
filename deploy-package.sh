@@ -69,12 +69,8 @@ cp UPDATE.md $DEPLOY_DIR/
 echo "📋 Copying documentation and setup files..."
 # Copy important documentation and setup files
 cp README.md $DEPLOY_DIR/
-cp README-DEPLOYMENT.md $DEPLOY_DIR/
-cp DEPLOYMENT.md $DEPLOY_DIR/
+cp -r docs/ $DEPLOY_DIR/
 cp .env.example $DEPLOY_DIR/
-cp EMAIL_SETUP.md $DEPLOY_DIR/
-cp VERSION_INFO.md $DEPLOY_DIR/
-cp DATABASE_MIGRATION_INFO.md $DEPLOY_DIR/
 
 # Copy additional deployment scripts
 cp server-setup.sh $DEPLOY_DIR/
@@ -112,7 +108,28 @@ echo "✅ Node.js $(node -v) detected"
 
 # Install dependencies
 echo "📦 Installing server dependencies..."
-npm install --production
+if npm install --production; then
+    echo "✅ Dependencies installed successfully"
+else
+    echo "❌ Failed to install dependencies"
+    echo "Please run 'npm install --production' manually after deployment"
+fi
+
+# Verify critical dependencies
+echo "🔍 Verifying critical dependencies..."
+MISSING_DEPS=""
+for dep in express sqlite3 bcrypt cors nodemailer; do
+    if [ ! -d "node_modules/$dep" ]; then
+        MISSING_DEPS="$MISSING_DEPS $dep"
+    fi
+done
+
+if [ -n "$MISSING_DEPS" ]; then
+    echo "⚠️  Missing dependencies:$MISSING_DEPS"
+    echo "Run: npm install --production"
+else
+    echo "✅ All critical dependencies verified"
+fi
 
 # Create required directories
 echo "📁 Creating required directories..."

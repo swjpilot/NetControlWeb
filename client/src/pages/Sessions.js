@@ -8,8 +8,6 @@ import {
   Search,
   Radio, 
   User,
-  Users,
-  MessageSquare,
   Filter,
   Eye,
   Play,
@@ -19,6 +17,7 @@ import {
 import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import ResponsiveTable from '../components/ResponsiveTable';
 
 const Sessions = () => {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -488,7 +487,7 @@ const Sessions = () => {
             </div>
           ) : sessions.length > 0 ? (
             <>
-              <div className="table-container">
+              <ResponsiveTable stickyFirstColumn={true} showScrollHint={true}>
                 <table className="table">
                   <thead>
                     <tr>
@@ -593,7 +592,7 @@ const Sessions = () => {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ResponsiveTable>
               
               {/* Pagination */}
               {totalPages > 1 && (

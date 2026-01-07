@@ -372,6 +372,36 @@ class Database {
               console.log('✅ Added smtp_no_auth setting (default: false)');
             }
           }
+        },
+        {
+          version: '1.1.0',
+          description: 'Add password reset tokens table',
+          migrate: async () => {
+            await this.run(`
+              CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                expires_at DATETIME NOT NULL,
+                used BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+              )
+            `);
+            console.log('✅ Created password_reset_tokens table');
+          }
+        },
+        {
+          version: '1.2.0',
+          description: 'Add STARTTLS support to email settings',
+          migrate: async () => {
+            // Check if smtp_starttls setting exists, if not add default value
+            const existing = await this.get('SELECT value FROM settings WHERE key = ?', ['smtp_starttls']);
+            if (!existing) {
+              await this.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ['smtp_starttls', 'false']);
+              console.log('✅ Added smtp_starttls setting (default: false)');
+            }
+          }
         }
         // Add future migrations here
       ];

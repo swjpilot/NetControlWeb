@@ -196,7 +196,7 @@ const Settings = () => {
     const tabFields = {
       qrz: ['qrz_username', 'qrz_password'],
       app: ['app_name', 'app_description', 'default_net_control', 'default_net_frequency', 'default_net_time', 'default_grid_square', 'distance_unit'],
-      email: ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
+      email: ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_starttls', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
       database: ['auto_backup_enabled', 'auto_backup_interval'],
       ui: ['theme', 'items_per_page'],
       security: ['session_timeout', 'require_password_change', 'min_password_length']
@@ -231,6 +231,7 @@ const Settings = () => {
       host: emailForm.watch('smtp_host'),
       port: emailForm.watch('smtp_port'),
       secure: emailForm.watch('smtp_secure'),
+      starttls: emailForm.watch('smtp_starttls'),
       noAuth: emailForm.watch('smtp_no_auth'),
       username: emailForm.watch('smtp_username'),
       password: emailForm.watch('smtp_password'),
@@ -595,6 +596,22 @@ const Settings = () => {
                         <label className="form-check-label">
                           Use SSL/TLS (recommended for port 465)
                         </label>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <div className="form-check">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          {...currentForm.register('smtp_starttls')}
+                        />
+                        <label className="form-check-label">
+                          Use STARTTLS (recommended for port 587)
+                        </label>
+                      </div>
+                      <div className="form-text">
+                        STARTTLS upgrades a plain text connection to encrypted. Common for modern email providers.
                       </div>
                     </div>
 

@@ -745,15 +745,6 @@ select.form-control::-moz-appearance {
 
 /* Responsive */
 @media (max-width: 768px) {
-  .sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.3s;
-  }
-  
-  .sidebar.open {
-    transform: translateX(0);
-  }
-  
   .main-content {
     margin-left: 0;
     padding: 1rem;
@@ -3252,4 +3243,1400 @@ select.form-control::-moz-appearance {
 
 .leaflet-map-pane svg {
   z-index: 2;
+}
+
+/* ===== MOBILE-FIRST RESPONSIVE DESIGN ===== */
+
+/* Mobile Menu Toggle Button */
+.mobile-menu-toggle {
+  display: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1100;
+  background: #0d6efd;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  transition: all 0.15s ease-in-out;
+}
+
+.mobile-menu-toggle:hover {
+  background: #0b5ed7;
+  transform: scale(1.05);
+}
+
+.mobile-menu-toggle:active {
+  transform: scale(0.95);
+}
+
+/* Mobile Overlay */
+.mobile-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+/* Base Mobile Styles (up to 768px) */
+@media (max-width: 768px) {
+  /* Show mobile menu toggle */
+  .mobile-menu-toggle {
+    display: block;
+  }
+
+  .mobile-overlay {
+    display: block;
+  }
+
+  /* Layout adjustments */
+  .layout {
+    flex-direction: column;
+  }
+
+  /* Sidebar mobile behavior - OVERRIDE ANY EXISTING RULES */
+  .sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: -280px !important;
+    width: 280px !important;
+    height: 100vh !important;
+    z-index: 1050 !important;
+    transition: left 0.3s ease-in-out !important;
+    overflow-y: auto !important;
+    transform: none !important; /* Override any transform rules */
+  }
+
+  .sidebar.sidebar-open {
+    left: 0 !important;
+  }
+
+  /* Main content adjustments */
+  .main-content {
+    margin-left: 0;
+    padding: 4rem 1rem 1rem 1rem;
+    min-height: 100vh;
+  }
+
+  /* Page headers */
+  .page-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .page-header h1 {
+    font-size: 1.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Cards and containers */
+  .card {
+    margin-bottom: 1rem;
+  }
+
+  .card-body {
+    padding: 1rem;
+  }
+
+  /* Stats cards - stack vertically */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .stats-card {
+    padding: 1rem;
+  }
+
+  .stats-card h3 {
+    font-size: 1.5rem;
+  }
+
+  /* Forms */
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-control {
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 0.75rem;
+  }
+
+  .btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    min-height: 44px; /* Touch target size */
+  }
+
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    min-height: 38px;
+  }
+
+  /* Input groups */
+  .input-group {
+    flex-wrap: nowrap !important; /* Prevent wrapping */
+    width: 100%;
+  }
+
+  .input-group .form-control {
+    min-width: 0;
+    flex: 1 1 auto;
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+
+  .input-group .btn {
+    flex-shrink: 0; /* Prevent buttons from shrinking */
+    white-space: nowrap;
+    padding: 0.75rem 0.75rem;
+  }
+
+  .input-group .btn-outline-secondary {
+    border-left: 0;
+    min-width: 44px; /* Touch target */
+  }
+
+  /* QRZ lookup buttons and similar */
+  .input-group .btn-sm {
+    padding: 0.5rem 0.5rem;
+    min-width: 38px;
+  }
+
+  /* Tables - horizontal scroll */
+  .table-responsive {
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+  }
+
+  .table {
+    margin-bottom: 0;
+    font-size: 0.875rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem;
+    white-space: nowrap;
+  }
+
+  /* Table actions */
+  .table-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  .table-actions .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    min-height: 32px;
+  }
+
+  /* Pagination */
+  .pagination {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .page-link {
+    padding: 0.5rem 0.75rem;
+    min-height: 44px;
+  }
+
+  /* Hide non-essential pagination items */
+  .pagination .page-item:not(.active):not(:first-child):not(:last-child) {
+    display: none;
+  }
+
+  /* Show only first, last, prev, next, and current */
+  .pagination .page-item:nth-child(-n+2),
+  .pagination .page-item:nth-last-child(-n+2),
+  .pagination .page-item.active {
+    display: block;
+  }
+
+  /* Filters and search */
+  .filters-row {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .search-input {
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  .filter-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Modals */
+  .modal-dialog {
+    margin: 1rem;
+    max-width: calc(100% - 2rem);
+  }
+
+  .modal-body {
+    padding: 1rem;
+  }
+
+  /* Navigation improvements */
+  .nav-pills {
+    flex-direction: column;
+  }
+
+  .nav-pills .nav-link {
+    text-align: left;
+    margin-bottom: 0.25rem;
+  }
+
+  /* Alerts */
+  .alert {
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  /* User menu in sidebar */
+  .user-menu-trigger {
+    padding: 0.75rem;
+  }
+
+  .user-details {
+    font-size: 0.875rem;
+  }
+
+  /* Version footer */
+  .version-footer {
+    padding: 0.5rem;
+  }
+
+  .version-info {
+    font-size: 0.75rem;
+  }
+}
+
+/* Small Mobile Styles (up to 480px) */
+@media (max-width: 480px) {
+  /* Even more compact layout */
+  .main-content {
+    padding: 4rem 0.5rem 1rem 0.5rem;
+  }
+
+  /* Smaller sidebar */
+  .sidebar {
+    width: 260px;
+    left: -260px;
+  }
+
+  /* Compact cards */
+  .card-body {
+    padding: 0.75rem;
+  }
+
+  /* Smaller text */
+  .page-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .stats-card h3 {
+    font-size: 1.25rem;
+  }
+
+  /* Compact table */
+  .table {
+    font-size: 0.75rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.375rem;
+  }
+
+  /* Stack form elements */
+  .form-row {
+    flex-direction: column;
+  }
+
+  .form-row .col {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Compact buttons */
+  .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* Tablet Styles (769px to 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Hide mobile menu toggle */
+  .mobile-menu-toggle {
+    display: none;
+  }
+
+  .mobile-overlay {
+    display: none;
+  }
+
+  /* Sidebar visible but narrower */
+  .sidebar {
+    width: 220px;
+    position: fixed;
+  }
+
+  .main-content {
+    margin-left: 220px;
+    padding: 2rem;
+  }
+
+  /* Adjust stats grid for tablet */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Table adjustments */
+  .table th,
+  .table td {
+    padding: 0.75rem 0.5rem;
+  }
+}
+
+/* Large Screen Optimizations (1025px+) */
+@media (min-width: 1025px) {
+  /* Full desktop layout */
+  .sidebar {
+    width: 250px;
+  }
+
+  .main-content {
+    margin-left: 250px;
+    padding: 2rem 3rem;
+  }
+
+  /* Full stats grid */
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  /* Larger touch targets for mouse users */
+  .btn {
+    min-height: auto;
+  }
+
+  .btn-sm {
+    min-height: auto;
+  }
+}
+
+/* Touch-specific improvements */
+@media (hover: none) and (pointer: coarse) {
+  /* Larger touch targets */
+  .btn,
+  .page-link,
+  .nav-link,
+  .dropdown-item {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+
+  /* Remove hover effects on touch devices */
+  .btn:hover,
+  .nav-link:hover,
+  .table tbody tr:hover {
+    background-color: inherit;
+  }
+
+  /* Better focus indicators for touch */
+  .btn:focus,
+  .form-control:focus,
+  .nav-link:focus {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+  }
+}
+
+/* Dark mode mobile adjustments */
+[data-theme="dark"] .mobile-menu-toggle {
+  background: #238be6;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .mobile-menu-toggle:hover {
+  background: #1a6ec1;
+}
+
+[data-theme="dark"] .mobile-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Auto theme mobile adjustments */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] .mobile-menu-toggle {
+    background: #238be6;
+    color: #ffffff;
+  }
+
+  [data-theme="auto"] .mobile-menu-toggle:hover {
+    background: #1a6ec1;
+  }
+
+  [data-theme="auto"] .mobile-overlay {
+    background: rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .mobile-menu-toggle,
+  .btn,
+  .nav-link {
+    transition: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .btn {
+    border-width: 2px;
+  }
+
+  .form-control {
+    border-width: 2px;
+  }
+
+  .table th,
+  .table td {
+    border-width: 2px;
+  }
+}
+
+/* Print styles */
+@media print {
+  .sidebar,
+  .mobile-menu-toggle,
+  .mobile-overlay,
+  .btn,
+  .pagination,
+  .user-menu {
+    display: none !important;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .table {
+    font-size: 0.75rem;
+  }
+}
+
+/* Landscape phone specific adjustments */
+@media (max-width: 768px) and (orientation: landscape) {
+  .sidebar {
+    width: 240px;
+    left: -240px;
+  }
+
+  .main-content {
+    padding: 3rem 1rem 1rem 1rem;
+  }
+
+  /* Compact header in landscape */
+  .page-header h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+}
+
+/* Additional responsive table improvements */
+@media (max-width: 768px) {
+  /* Make tables more mobile-friendly */
+  .table-container {
+    position: relative;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-container::after {
+    content: "← Swipe to see more →";
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    pointer-events: none;
+    opacity: 0.8;
+    z-index: 5;
+  }
+
+  /* Hide scroll hint after user scrolls */
+  .table-container.scrolled::after {
+    display: none;
+  }
+
+  /* Disable sticky columns on mobile for better UX */
+  .table-sticky-first th:first-child,
+  .table-sticky-first td:first-child {
+    position: static;
+    left: auto;
+    background: transparent;
+    z-index: auto;
+    border-right: none;
+    box-shadow: none;
+  }
+}
+
+/* Form improvements for mobile */
+@media (max-width: 768px) {
+  /* Stack form elements vertically */
+  .row .col-md-6,
+  .row .col-lg-4,
+  .row .col-lg-6 {
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  /* Better spacing for form groups */
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  /* Larger checkboxes and radios */
+  .form-check-input {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .form-check-label {
+    padding-left: 0.5rem;
+  }
+
+  /* Better select styling */
+  .form-select {
+    font-size: 16px;
+    padding: 0.75rem;
+    background-size: 20px 16px;
+  }
+
+  /* Autocomplete improvements */
+  .autocomplete-suggestions {
+    max-height: 150px;
+    font-size: 0.875rem;
+  }
+
+  .autocomplete-suggestion {
+    padding: 0.75rem;
+    min-height: 44px;
+  }
+}
+
+/* Modal improvements for mobile */
+@media (max-width: 768px) {
+  .modal-dialog {
+    margin: 0.5rem;
+    max-width: calc(100% - 1rem);
+  }
+
+  .modal-content {
+    border-radius: 0.5rem;
+  }
+
+  .modal-header {
+    padding: 1rem;
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  .modal-title {
+    font-size: 1.25rem;
+  }
+
+  .modal-body {
+    padding: 1rem;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .modal-footer {
+    padding: 1rem;
+    border-top: 1px solid #dee2e6;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+  }
+}
+/* Mobile toast notifications */
+@media (max-width: 768px) {
+  .mobile-toast {
+    margin: 0 1rem;
+    max-width: calc(100vw - 2rem);
+  }
+  
+  /* Position toasts better on mobile */
+  [data-sonner-toaster] {
+    top: 4rem !important;
+    left: 1rem !important;
+    right: 1rem !important;
+    width: auto !important;
+  }
+}
+/* Mobile Form Components */
+.mobile-form {
+  width: 100%;
+}
+
+.mobile-form-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.mobile-form-title {
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.mobile-form-description {
+  margin-bottom: 0;
+  font-size: 0.875rem;
+}
+
+.mobile-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mobile-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mobile-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-form-label {
+  font-weight: 500;
+  margin-bottom: 0;
+  font-size: 0.875rem;
+}
+
+.mobile-form-control-wrapper {
+  position: relative;
+}
+
+.mobile-form-error {
+  margin-top: 0.25rem;
+}
+
+.mobile-form-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dee2e6;
+}
+
+/* Responsive adjustments */
+@media (min-width: 576px) {
+  .mobile-form-row {
+    flex-direction: row;
+  }
+  
+  .mobile-form-row > * {
+    flex: 1;
+  }
+  
+  .mobile-form-buttons {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+  
+  .mobile-form-buttons .btn {
+    width: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .mobile-form-buttons .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+  
+  .mobile-form-group .form-control,
+  .mobile-form-group .form-select {
+    font-size: 16px; /* Prevent zoom on iOS */
+    min-height: 44px;
+  }
+}
+
+/* Dark mode form styles */
+[data-theme="dark"] .mobile-form-header {
+  border-color: #30363d;
+}
+
+[data-theme="dark"] .mobile-form-title {
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] .mobile-form-description {
+  color: #8b949e;
+}
+
+[data-theme="dark"] .mobile-form-label {
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] .mobile-form-buttons {
+  border-color: #30363d;
+}
+
+/* Auto theme form styles */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] .mobile-form-header {
+    border-color: #30363d;
+  }
+
+  [data-theme="auto"] .mobile-form-title {
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] .mobile-form-description {
+    color: #8b949e;
+  }
+
+  [data-theme="auto"] .mobile-form-label {
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] .mobile-form-buttons {
+    border-color: #30363d;
+  }
+}
+/* Stats Grid Layout */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1025px) {
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+/* Page Header Styles */
+.page-header {
+  margin-bottom: 1.5rem;
+}
+
+.page-header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.page-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .page-header-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .page-header h1 {
+    font-size: 1.5rem;
+    text-align: center;
+  }
+  
+  .page-header-actions {
+    justify-content: center;
+  }
+  
+  .page-header-actions .btn {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-header h1 {
+    font-size: 1.25rem;
+  }
+  
+  .page-header-actions {
+    flex-direction: column;
+  }
+  
+  .page-header-actions .btn {
+    width: 100%;
+  }
+}
+/* Mobile Form Button Improvements */
+@media (max-width: 768px) {
+  /* Prevent form buttons from wrapping */
+  .form-group .d-flex,
+  .form-group .input-group,
+  .autocomplete-container .input-group {
+    flex-wrap: nowrap !important;
+    gap: 0;
+  }
+
+  /* Ensure buttons stay connected to inputs */
+  .input-group .btn,
+  .input-group .input-group-text {
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+
+  .input-group .form-control:first-child {
+    border-top-left-radius: 0.375rem;
+    border-bottom-left-radius: 0.375rem;
+    border-right: 0;
+  }
+
+  .input-group .form-control:not(:first-child):not(:last-child) {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .input-group .btn:last-child,
+  .input-group .input-group-text:last-child {
+    border-top-right-radius: 0.375rem;
+    border-bottom-right-radius: 0.375rem;
+    border-left: 0;
+  }
+
+  /* QRZ lookup and similar buttons */
+  .btn-outline-secondary.btn-sm {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.75rem;
+    min-width: 36px;
+    white-space: nowrap;
+  }
+
+  /* Copy buttons in QRZ results */
+  .alert .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    margin-left: 0.5rem;
+  }
+
+  /* Form button groups */
+  .btn-group {
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  .btn-group .btn {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Password toggle buttons */
+  .input-group-button {
+    min-width: 44px;
+    padding: 0.75rem 0.5rem;
+    border-left: 0 !important;
+  }
+
+  /* Filter and action buttons */
+  .d-flex.gap-2 {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.25rem;
+  }
+
+  .d-flex.gap-2 .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Autocomplete with buttons */
+  .autocomplete-container .input-group .btn {
+    border-left: 1px solid #ced4da;
+  }
+
+  .autocomplete-container .input-group .form-control:focus + .btn {
+    border-left-color: #3498db;
+  }
+}
+
+/* Small mobile adjustments */
+@media (max-width: 480px) {
+  .input-group .btn {
+    padding: 0.5rem 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-outline-secondary.btn-sm {
+    padding: 0.25rem 0.375rem;
+    font-size: 0.7rem;
+    min-width: 32px;
+  }
+
+  /* Make button text shorter on very small screens */
+  .btn .d-none.d-sm-inline {
+    display: none !important;
+  }
+
+  /* Stack button groups vertically on very small screens if needed */
+  .btn-group-vertical-sm {
+    flex-direction: column;
+  }
+
+  .btn-group-vertical-sm .btn {
+    width: 100%;
+    border-radius: 0.375rem !important;
+    margin-bottom: 0.25rem;
+  }
+}
+/* Specific fixes for inline buttons and copy buttons */
+@media (max-width: 768px) {
+  /* Info items with inline copy buttons */
+  .info-item {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .info-item strong {
+    flex-shrink: 0;
+    min-width: auto;
+  }
+
+  .info-item .ms-2 {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    margin-left: 0 !important;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .info-item .btn-sm {
+    flex-shrink: 0;
+    margin-left: 0.5rem !important;
+    padding: 0.25rem 0.375rem;
+    min-width: 32px;
+  }
+
+  /* QRZ lookup results copy buttons */
+  .info-item a {
+    word-break: break-all;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Form groups with QRZ lookup buttons */
+  .form-group .input-group {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  .form-group .input-group .form-control {
+    flex: 1;
+    min-width: 0;
+    border-right: 0;
+  }
+
+  .form-group .input-group .btn {
+    flex-shrink: 0;
+    border-left: 0;
+    min-width: 44px;
+    padding: 0.75rem 0.75rem;
+  }
+
+  /* Prevent text wrapping in buttons */
+  .btn {
+    white-space: nowrap;
+  }
+
+  /* Special handling for very long content */
+  .info-item span:not(.btn) {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  /* Badge elements should not break */
+  .badge {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Ensure proper spacing in card bodies */
+  .card-body .info-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+
+/* Very small screens - make copy buttons even more compact */
+@media (max-width: 480px) {
+  .info-item .btn-sm {
+    padding: 0.125rem 0.25rem;
+    min-width: 28px;
+  }
+
+  .info-item .btn-sm svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Stack info items more compactly */
+  .info-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .info-item .ms-2 {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+
+  .info-item strong {
+    margin-bottom: 0.25rem;
+  }
+}
+
+/* Sticky columns only on larger screens where they make sense */
+@media (min-width: 769px) {
+  .table-sticky-first th:first-child,
+  .table-sticky-first td:first-child {
+    position: sticky;
+    left: 0;
+    background: #ffffff;
+    z-index: 10;
+    border-right: 1px solid #dee2e6;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Dark mode sticky columns for larger screens */
+  [data-theme="dark"] .table-sticky-first th:first-child,
+  [data-theme="dark"] .table-sticky-first td:first-child {
+    background: #161b22 !important;
+    border-right-color: #30363d;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Auto theme sticky columns for larger screens */
+  @media (prefers-color-scheme: dark) {
+    [data-theme="auto"] .table-sticky-first th:first-child,
+    [data-theme="auto"] .table-sticky-first td:first-child {
+      background: #161b22 !important;
+      border-right-color: #30363d;
+      box-shadow: 2px 0 4px rgba(0, 0, 0, 0.3);
+    }
+  }
+}
+/* Enhanced mobile table scrolling */
+@media (max-width: 768px) {
+  /* Improve table scrolling performance */
+  .table-container {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* Add scroll indicators */
+  .table-container {
+    background: 
+      /* Shadow on the right */
+      linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,1)) right/30px 100%,
+      /* Shadow on the left */
+      linear-gradient(to left, rgba(255,255,255,0), rgba(255,255,255,1)) left/30px 100%,
+      /* Main content */
+      white;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll;
+  }
+
+  /* Dark mode scroll indicators */
+  [data-theme="dark"] .table-container {
+    background: 
+      linear-gradient(to right, rgba(22,27,34,0), rgba(22,27,34,1)) right/30px 100%,
+      linear-gradient(to left, rgba(22,27,34,0), rgba(22,27,34,1)) left/30px 100%,
+      #161b22;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll;
+  }
+
+  /* Auto theme scroll indicators */
+  @media (prefers-color-scheme: dark) {
+    [data-theme="auto"] .table-container {
+      background: 
+        linear-gradient(to right, rgba(22,27,34,0), rgba(22,27,34,1)) right/30px 100%,
+        linear-gradient(to left, rgba(22,27,34,0), rgba(22,27,34,1)) left/30px 100%,
+        #161b22;
+      background-repeat: no-repeat;
+      background-attachment: local, local, scroll;
+    }
+  }
+
+  /* Make table cells more readable on mobile */
+  .table td {
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  /* Ensure minimum column widths for readability */
+  .table th:first-child,
+  .table td:first-child {
+    min-width: 120px; /* Date column */
+  }
+
+  .table th:nth-child(2),
+  .table td:nth-child(2) {
+    min-width: 140px; /* Net Control column */
+  }
+
+  .table th:nth-child(3),
+  .table td:nth-child(3) {
+    min-width: 100px; /* Time column */
+  }
+
+  .table th:nth-child(4),
+  .table td:nth-child(4) {
+    min-width: 120px; /* Frequency column */
+  }
+
+  .table th:last-child,
+  .table td:last-child {
+    min-width: 120px; /* Actions column */
+  }
+}
+/* Fix for call sign search input groups on mobile */
+@media (max-width: 768px) {
+  /* Make search and action buttons more compact in input groups */
+  .input-group .btn-outline-secondary {
+    padding: 0.5rem 0.5rem !important;
+    min-width: 40px !important;
+    flex-shrink: 0;
+    border-left: 0;
+  }
+
+  /* Ensure input takes up most of the space */
+  .input-group .form-control {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+  }
+
+  /* Specific fixes for autocomplete containers */
+  .autocomplete-container .input-group {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  .autocomplete-container .input-group .form-control {
+    flex: 1;
+    min-width: 120px; /* Ensure minimum usable width */
+  }
+
+  .autocomplete-container .input-group .btn {
+    flex: 0 0 auto;
+    width: 40px;
+    padding: 0.5rem 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Make icons smaller in compact buttons */
+  .input-group .btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Ensure proper border radius */
+  .input-group .form-control:not(:last-child) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: 0;
+  }
+
+  .input-group .btn:not(:first-child) {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 0;
+  }
+
+  .input-group .btn:last-child {
+    border-top-right-radius: 0.375rem;
+    border-bottom-right-radius: 0.375rem;
+  }
+}
+
+/* Extra small screens - even more compact */
+@media (max-width: 480px) {
+  .input-group .btn-outline-secondary {
+    padding: 0.375rem 0.25rem !important;
+    min-width: 36px !important;
+  }
+
+  .input-group .btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .autocomplete-container .input-group .form-control {
+    min-width: 100px;
+  }
+}
+/* Fix input-group-text sizing on mobile */
+@media (max-width: 768px) {
+  /* Make input-group-text more compact */
+  .input-group-text {
+    padding: 0.5rem 0.5rem !important;
+    min-width: 40px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .input-group-text svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Ensure search inputs with icons have proper proportions */
+  .input-group .input-group-text + .form-control {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .input-group-text {
+    padding: 0.375rem 0.375rem !important;
+    min-width: 36px;
+  }
+
+  .input-group-text svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+/* Traffic form specific mobile improvements */
+@media (max-width: 768px) {
+  /* Ensure traffic form autocomplete containers work well */
+  .autocomplete-container {
+    position: relative;
+    width: 100%;
+  }
+
+  .autocomplete-container .input-group {
+    width: 100%;
+  }
+
+  /* Selected operator alerts in traffic form */
+  .selected-operator .alert {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .selected-operator .alert .d-flex {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .selected-operator .alert svg {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  /* Form text help */
+  .form-text {
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
+  /* Traffic form buttons */
+  .traffic-form .d-flex.gap-2 {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .traffic-form .btn {
+    width: 100%;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+  .selected-operator .alert {
+    padding: 0.375rem;
+  }
+
+  .selected-operator .alert .small {
+    font-size: 0.7rem;
+  }
+
+  .form-text {
+    font-size: 0.7rem;
+  }
 }

@@ -1,233 +1,158 @@
-# NetControl Web
+# NetControl - Ham Radio Net Management System
 
-A modern web-based Ham Radio Network Management application, ported from the original Windows MFC NetControl application.
+A comprehensive web-based system for managing amateur radio net sessions, participants, and traffic records.
 
-## Features
+## Quick Start
 
-### Core Functionality
-- **Net Session Management**: Create and manage amateur radio net sessions with date-based organization
-- **Operator Database**: Track call signs, names, locations, grid squares, and license information
-- **Real-time Check-ins**: Live participant tracking during net sessions
-- **QRZ Integration**: Automatic call sign lookups with distance calculations
-- **FCC Database**: Local FCC ULS database for license verification
-- **Audio Recording**: Session recording and playback capabilities
-- **Report Generation**: Automated session and monthly reports with email distribution
+### For Users
+1. **Download** the latest release package
+2. **Extract** and run `./deploy-server.sh`
+3. **Access** the web interface at `http://localhost:3001`
+4. **Login** with `admin` / `admin123` (change immediately)
 
-### Modern Web Features
-- **Responsive Design**: Works on desktop, tablet, and mobile devices
-- **Real-time Updates**: WebSocket-based live updates across all connected clients
-- **RESTful API**: Clean API design for integration with other tools
-- **Progressive Web App**: Can be installed and used offline
-- **Multi-user Support**: Concurrent access for multiple net control operators
+### For Developers
+```bash
+git clone <repository>
+cd netcontrol
+npm install
+npm run dev
+```
 
-## Technology Stack
+## Documentation
 
-### Backend
-- **Node.js** with Express.js framework
-- **SQLite** database for local data storage
-- **Socket.IO** for real-time communication
-- **Axios** for HTTP requests and QRZ API integration
-- **Multer** for audio file uploads
-- **Nodemailer** for email report distribution
+- **[docs/FEATURES.md](docs/FEATURES.md)** - Complete feature list and implementation details
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Deployment, production setup, and troubleshooting
+- **[docs/README-DEPLOYMENT.md](docs/README-DEPLOYMENT.md)** - Quick deployment reference
 
-### Frontend
-- **React** with modern hooks and functional components
-- **React Router** for navigation
-- **React Query** for data fetching and caching
-- **Socket.IO Client** for real-time updates
-- **React Calendar** for date selection
-- **Lucide React** for icons
+## Key Features
 
-## Installation
+### ✅ Core Functionality
+- **Net Session Management** - Create and manage net sessions
+- **Participant Tracking** - Track check-ins and participation
+- **Traffic Handling** - Record and manage message traffic
+- **Operator Database** - Maintain operator information with QRZ integration
+- **Reports System** - Comprehensive analytics and reporting
 
-### Prerequisites
-- Node.js 16+ and npm
-- Git
+### ✅ Modern Features
+- **Mobile Responsive** - Optimized for all device types
+- **Email Integration** - SMTP support with STARTTLS and no-auth options
+- **Password Reset** - Email-based password recovery
+- **Interactive Maps** - Operator location mapping
+- **Version Management** - Automatic versioning and updates
 
-### Quick Start
+### ✅ Technical Features
+- **Automatic Database Migrations** - Seamless updates
+- **RESTful API** - Clean API design
+- **Real-time Updates** - Dynamic content updates
+- **Comprehensive Logging** - Detailed system logging
+- **Production Ready** - PM2, systemd, and Docker support
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd netcontrol-web
-   ```
+## System Requirements
 
-2. **Install dependencies**
-   ```bash
-   npm run install-all
-   ```
+- **Node.js** 18 or higher
+- **Operating System** Linux, macOS, or Windows
+- **Memory** 512MB RAM minimum
+- **Storage** 1GB available space
+- **Network** Internet connection for QRZ lookups (optional)
 
-3. **Start development servers**
-   ```bash
-   npm run dev
-   ```
+## Architecture
 
-4. **Access the application**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
+```
+NetControl/
+├── client/          # React frontend application
+├── server/          # Node.js backend API
+├── docs/           # Documentation files
+└── scripts/        # Deployment and utility scripts
+```
 
-### Production Deployment
+**Frontend**: React with Bootstrap for responsive UI  
+**Backend**: Node.js with Express and SQLite database  
+**Authentication**: Session-based with bcrypt password hashing  
+**Email**: Nodemailer with multiple provider support  
 
-1. **Build the frontend**
-   ```bash
-   npm run build
-   ```
+## Quick Commands
 
-2. **Start production server**
-   ```bash
-   npm start
-   ```
+```bash
+# Development
+npm run dev          # Start development servers
+npm run build        # Build production client
+npm test            # Run tests
+
+# Production
+npm start           # Start production server
+npm run deploy      # Create deployment package
+
+# Maintenance
+./update-production.sh    # Update production installation
+./status-production.sh    # Check system status
+./troubleshoot-installation.sh  # Diagnose issues
+```
 
 ## Configuration
 
 ### Environment Variables
-Create a `.env` file in the root directory:
-
-```env
-NODE_ENV=production
-PORT=5000
-DATABASE_PATH=./server/data/netcontrol.db
-UPLOAD_PATH=./server/uploads
-```
-
-### QRZ Configuration
-QRZ.com credentials are required for call sign lookups:
-- Sign up at https://www.qrz.com
-- Use your QRZ username and password in the QRZ Lookup page
-- Credentials are stored locally in browser storage (password not saved)
-
-## Usage Guide
-
-### Starting a Net Session
-
-1. **Navigate to Sessions** → Click "New Session" or select today's date
-2. **Set Net Control** information (call sign, name)
-3. **Record Start Time** when the net begins
-4. **Add Participants** as they check in during the net
-5. **Mark Traffic** for operators with traffic to pass
-6. **End Session** and record end time
-
-### Managing Operators
-
-1. **Add New Operators** manually or via QRZ lookup
-2. **Update Information** including grid squares and contact details
-3. **Search and Filter** the operator database
-4. **Import from QRZ** to automatically populate operator details
-
-### Generating Reports
-
-1. **Session Reports**: Detailed participant lists and traffic summary
-2. **Monthly Reports**: Statistics and trends for a given month
-3. **Email Distribution**: Send reports to multiple recipients
-4. **Export Options**: JSON data for integration with other tools
-
-## API Documentation
-
-### Operators
-- `GET /api/operators` - List all operators
-- `POST /api/operators` - Create new operator
-- `GET /api/operators/:callSign` - Get operator details
-- `PUT /api/operators/:callSign` - Update operator
-- `DELETE /api/operators/:callSign` - Delete operator
-
-### Sessions
-- `GET /api/sessions` - List sessions
-- `POST /api/sessions` - Create new session
-- `GET /api/sessions/:date` - Get session details
-- `PUT /api/sessions/:date` - Update session
-- `POST /api/sessions/:date/participants` - Add participant
-- `PUT /api/sessions/:date/participants/:id` - Update participant
-
-### QRZ Lookup
-- `POST /api/qrz/lookup` - Lookup call sign
-- `GET /api/qrz/cache/:callSign` - Get cached data
-- `POST /api/qrz/distance` - Calculate grid square distance
-
-### Reports
-- `GET /api/reports/session/:date` - Generate session report
-- `GET /api/reports/monthly/:year/:month` - Generate monthly report
-- `POST /api/reports/email` - Email report
-
-## Database Schema
-
-### Core Tables
-- **operators**: Call signs, names, locations, grid squares
-- **sessions**: Net session information by date
-- **session_participants**: Many-to-many relationship for check-ins
-- **qrz_cache**: Cached QRZ lookup results
-- **fcc_en/fcc_am**: FCC ULS database records
-- **audio_recordings**: Session audio files
-- **settings**: Application configuration
-
-## Development
-
-### Project Structure
-```
-netcontrol-web/
-├── server/                 # Backend Node.js application
-│   ├── database/          # Database configuration and models
-│   ├── routes/            # API route handlers
-│   ├── uploads/           # File upload storage
-│   └── index.js           # Main server file
-├── client/                # Frontend React application
-│   ├── src/
-│   │   ├── components/    # Reusable React components
-│   │   ├── pages/         # Page components
-│   │   ├── contexts/      # React contexts (Socket, etc.)
-│   │   └── App.js         # Main React app
-│   └── package.json
-└── package.json           # Root package.json
-```
-
-### Adding New Features
-
-1. **Backend**: Add routes in `server/routes/`
-2. **Frontend**: Add pages in `client/src/pages/`
-3. **Database**: Update schema in `server/database/db.js`
-4. **Real-time**: Add Socket.IO events for live updates
-
-### Testing
-
 ```bash
-# Run backend tests
-npm run test:server
-
-# Run frontend tests
-npm run test:client
-
-# Run all tests
-npm test
+PORT=3001                    # Server port
+NODE_ENV=production         # Environment
+DB_PATH=./server/data/netcontrol.db  # Database location
+SMTP_HOST=smtp.gmail.com    # Email server
+SMTP_PORT=587               # Email port
+SMTP_STARTTLS=true         # Use STARTTLS
 ```
 
-## Migration from Original NetControl
+### Email Providers
+- **Gmail** - App passwords required
+- **Office 365** - Standard authentication
+- **Local SMTP** - No authentication option available
 
-This web application preserves all core functionality from the original Windows MFC NetControl:
+## Default Login
+- **Username**: `admin`
+- **Password**: `admin123`
+- **⚠️ Change immediately after first login**
 
-### Preserved Features
-- ✅ Net session management with date-based organization
-- ✅ Operator database with call sign lookup
-- ✅ QRZ.com integration for call sign information
-- ✅ FCC database integration (ULS records)
-- ✅ Audio recording and playback
-- ✅ Report generation and email distribution
-- ✅ Grid square distance calculations
-- ✅ Traffic message tracking
+## Mobile Support
 
-### Modern Enhancements
-- ✅ Web-based interface accessible from any device
-- ✅ Real-time collaboration between multiple operators
-- ✅ Responsive design for mobile and tablet use
-- ✅ RESTful API for integration with other tools
-- ✅ Modern database with better performance
-- ✅ Improved search and filtering capabilities
+NetControl is fully optimized for mobile devices with:
+- Responsive navigation with hamburger menu
+- Touch-friendly forms and buttons
+- Optimized table scrolling
+- Mobile-first design approach
+
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/login` - User login
+- `POST /api/auth/logout` - User logout
+- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/reset-password` - Reset password with token
+
+### Core Features
+- `GET /api/sessions` - List net sessions
+- `GET /api/operators` - List operators
+- `GET /api/reports/*` - Various reports
+- `GET /api/qrz/lookup/:callsign` - QRZ callsign lookup
+
+## Browser Support
+
+### Mobile
+- iOS Safari 12+
+- Chrome Mobile 70+
+- Firefox Mobile 68+
+- Samsung Internet 10+
+
+### Desktop
+- Chrome 80+
+- Firefox 75+
+- Safari 13+
+- Edge 80+
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## License
 
@@ -235,14 +160,22 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Support
 
-For support and questions:
-- Create an issue on GitHub
-- Check the documentation in the `/docs` folder
-- Review the API documentation above
+### Documentation
+- **Features**: See [docs/FEATURES.md](docs/FEATURES.md) for detailed feature information
+- **Deployment**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setup and troubleshooting
+- **API**: API documentation available at `/api/docs` when running
 
-## Acknowledgments
+### Troubleshooting
+1. Run `./remote-diagnostics.sh` for system analysis
+2. Check logs in `/opt/netcontrol/logs/`
+3. Verify service status: `sudo systemctl status netcontrol`
 
-- Original NetControl MFC application developers
-- QRZ.com for call sign lookup services
-- FCC for providing ULS database access
-- Amateur radio community for feedback and testing
+### Getting Help
+- Check the documentation first
+- Run diagnostic scripts
+- Review system logs
+- Report issues with full diagnostic output
+
+---
+
+**NetControl** - Making amateur radio net management simple and efficient.

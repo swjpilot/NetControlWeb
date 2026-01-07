@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, 
@@ -15,7 +15,9 @@ import {
   ChevronDown,
   Sun,
   Moon,
-  Monitor
+  Monitor,
+  Menu,
+  X
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -26,6 +28,24 @@ const Layout = ({ children }) => {
   const { user, logout, isAdmin } = useAuth();
   const { theme, changeTheme } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close sidebar when clicking outside on mobile
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (sidebarOpen && !event.target.closest('.sidebar') && !event.target.closest('.mobile-menu-toggle')) {
+        setSidebarOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [sidebarOpen]);
+
+  // Close sidebar when route changes on mobile
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Home },
@@ -63,7 +83,19 @@ const Layout = ({ children }) => {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      {/* Mobile Menu Toggle */}
+      <button 
+        className="mobile-menu-toggle"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        aria-label="Toggle navigation menu"
+      >
+        {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+
+      {/* Mobile Overlay */}
+      {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-header">
           <h1>NetControl</h1>
           <p>Ham Radio Net Management</p>

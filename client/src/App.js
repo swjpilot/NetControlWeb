@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
@@ -7,6 +7,8 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import 'leaflet/dist/leaflet.css';
 import FCCDatabase from './pages/FCCDatabase';
@@ -18,6 +20,7 @@ import Sessions from './pages/Sessions';
 import SessionDetail from './pages/SessionDetail';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
+import { initializeMobileUtils } from './utils/mobileUtils';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -31,6 +34,11 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  // Initialize mobile utilities on app load
+  useEffect(() => {
+    initializeMobileUtils();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
@@ -39,6 +47,8 @@ function App() {
             <div className="App">
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/*" element={
                   <ProtectedRoute>
                     <Layout>
@@ -67,13 +77,19 @@ function App() {
                 } />
               </Routes>
               <Toaster 
-                position="top-right"
+                position="top-center"
                 toastOptions={{
                   duration: 4000,
                   style: {
                     background: '#363636',
                     color: '#fff',
+                    fontSize: '14px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    maxWidth: '90vw',
                   },
+                  // Mobile-specific positioning
+                  className: 'mobile-toast',
                 }}
               />
             </div>
