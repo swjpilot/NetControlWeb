@@ -95,7 +95,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8081;
 
 // Handle port conflicts gracefully
 const server = app.listen(PORT, () => {
