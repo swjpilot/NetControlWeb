@@ -1,0 +1,32 @@
+{
+  "name": "netcontrol-web",
+  "version": "1.0.0",
+  "description": "Ham Radio Network Management Web Application",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server": "node server/index.js",
+    "server:dev": "NODE_ENV=development nodemon server/index.js",
+    "client": "cd client && npm start",
+    "client:dev": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "start": "NODE_ENV=production node server/index.js",
+    "install-all": "npm install && cd client && npm install",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "ham-radio",
+    "amateur-radio",
+    "net-control",
+    "web-app"
+  ],
+  "author": "NetControl Web Team",
+  "license": "MIT"
+}
