@@ -5,8 +5,13 @@ node_modules
 *.db
 server/data/
 server/database.db
+
+# Deployment packages and backups
+*.tar.gz
+*.zip
+*backup*/
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
-node_modules
