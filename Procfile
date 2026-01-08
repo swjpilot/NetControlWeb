@@ -1,1 +1,1 @@
-web: node app-simple.js
+web: node server/index.js
