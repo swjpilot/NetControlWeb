@@ -31,15 +31,27 @@ const UserManagement = () => {
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm();
   const { register: registerPassword, handleSubmit: handlePasswordSubmit, reset: resetPassword, formState: { errors: passwordErrors } } = useForm();
 
+  // Helper function to format dates safely
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleDateString();
+    } catch (error) {
+      return 'Invalid Date';
+    }
+  };
+
   // Fetch all users
   const { data: users, isLoading } = useQuery(
     'users',
-    () => axios.get('/api/auth/users').then(res => res.data.users)
+    () => axios.get('/api/users').then(res => res.data.users)
   );
 
   // Add user mutation
   const addUserMutation = useMutation(
-    (userData) => axios.post('/api/auth/register', userData),
+    (userData) => axios.post('/api/users', userData),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('users');
@@ -55,7 +67,7 @@ const UserManagement = () => {
 
   // Update user mutation
   const updateUserMutation = useMutation(
-    ({ userId, userData }) => axios.put(`/api/auth/users/${userId}`, userData),
+    ({ userId, userData }) => axios.put(`/api/users/${userId}`, userData),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('users');
@@ -71,7 +83,7 @@ const UserManagement = () => {
 
   // Reset password mutation
   const resetPasswordMutation = useMutation(
-    ({ userId, newPassword }) => axios.put(`/api/auth/users/${userId}/reset-password`, { newPassword }),
+    ({ userId, newPassword }) => axios.put(`/api/users/${userId}/reset-password`, { newPassword }),
     {
       onSuccess: (response) => {
         toast.success(`Password reset successfully for ${response.data.username}`);
@@ -86,7 +98,7 @@ const UserManagement = () => {
 
   // Delete user mutation
   const deleteUserMutation = useMutation(
-    (userId) => axios.delete(`/api/auth/users/${userId}`),
+    (userId) => axios.delete(`/api/users/${userId}`),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('users');
@@ -128,7 +140,7 @@ const UserManagement = () => {
     setEditingUser(user);
     setValue('email', user.email);
     setValue('role', user.role);
-    setValue('callSign', user.call_sign);
+    setValue('callSign', user.callSign); // Use camelCase from API response
     setValue('name', user.name);
     setValue('active', user.active);
     setShowAddForm(true);
@@ -451,10 +463,10 @@ const UserManagement = () => {
                           {user.name && (
                             <div className="text-muted small">{user.name}</div>
                           )}
-                          {user.call_sign && (
+                          {user.callSign && (
                             <div className="text-muted small">
                               <Radio size={12} className="me-1" />
-                              {user.call_sign}
+                              {user.callSign}
                             </div>
                           )}
                         </div>
@@ -496,7 +508,7 @@ const UserManagement = () => {
                         <div className="d-flex align-items-center">
                           <Calendar size={14} className="text-muted me-1" />
                           <span className="small">
-                            {new Date(user.created_at).toLocaleDateString()}
+                            {formatDate(user.createdAt)}
                           </span>
                         </div>
                         {user.created_by_username && (
@@ -506,13 +518,9 @@ const UserManagement = () => {
                         )}
                       </td>
                       <td>
-                        {user.last_login ? (
-                          <span className="small">
-                            {new Date(user.last_login).toLocaleDateString()}
-                          </span>
-                        ) : (
-                          <span className="text-muted small">Never</span>
-                        )}
+                        <span className="small">
+                          {formatDate(user.lastLogin)}
+                        </span>
                       </td>
                       <td>
                         <div className="d-flex gap-1">
