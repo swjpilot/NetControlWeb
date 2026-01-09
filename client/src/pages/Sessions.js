@@ -15,11 +15,13 @@ import {
   Loader
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useSettings } from '../contexts/SettingsContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import ResponsiveTable from '../components/ResponsiveTable';
 
 const Sessions = () => {
+  const { getSetting, updateSettings } = useSettings();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,7 +31,7 @@ const Sessions = () => {
   const [selectedNetControlUser, setSelectedNetControlUser] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(() => {
-    return parseInt(localStorage.getItem('netcontrol_items_per_page')) || 25;
+    return parseInt(getSetting('items_per_page', '25'));
   });
   const queryClient = useQueryClient();
 
@@ -63,12 +65,16 @@ const Sessions = () => {
   const addSessionMutation = useMutation(
     (sessionData) => axios.post('/api/sessions', sessionData),
     {
-      onSuccess: () => {
+      onSuccess: (response) => {
         queryClient.invalidateQueries('sessions');
         toast.success('Session created successfully');
         reset();
         setSelectedNetControlUser('');
         setShowAddForm(false);
+        
+        // Navigate to the session detail page for participant entry
+        const sessionId = response.data.id;
+        window.location.href = `/sessions/${sessionId}`;
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to create session');
@@ -120,7 +126,10 @@ const Sessions = () => {
 
   const handleEdit = (session) => {
     setEditingSession(session);
-    setValue('session_date', session.session_date);
+    // Convert database date to YYYY-MM-DD format for HTML date input
+    const sessionDate = new Date(session.session_date);
+    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+    setValue('session_date', localDate.toISOString().split('T')[0]);
     setValue('start_time', session.start_time || '');
     setValue('end_time', session.end_time || '');
     setValue('net_control_call', session.net_control_call);
@@ -152,10 +161,49 @@ const Sessions = () => {
     reset();
   };
 
-  const handleItemsPerPageChange = (newItemsPerPage) => {
+  const handleNewSession = () => {
+    // Load default settings and populate form
+    const defaultNetControl = getSetting('default_net_control', '');
+    const defaultFrequency = getSetting('default_net_frequency', '');
+    const defaultTime = getSetting('default_net_time', '');
+    const defaultPower = getSetting('default_net_power', '');
+    
+    // Reset form first
+    reset();
+    
+    // Set default values
+    setValue('session_date', getTodayDate());
+    setValue('net_type', 'Regular');
+    setValue('mode', 'FM');
+    
+    if (defaultNetControl) {
+      setValue('net_control_call', defaultNetControl);
+    }
+    if (defaultFrequency) {
+      setValue('frequency', defaultFrequency);
+    }
+    if (defaultTime) {
+      setValue('start_time', defaultTime);
+    }
+    if (defaultPower) {
+      setValue('power', defaultPower);
+    }
+    
+    setShowAddForm(true);
+  };
+
+  const handleItemsPerPageChange = async (newItemsPerPage) => {
     setItemsPerPage(newItemsPerPage);
     setCurrentPage(1);
-    localStorage.setItem('netcontrol_items_per_page', newItemsPerPage.toString());
+    
+    // Update in database settings
+    try {
+      await updateSettings({ items_per_page: newItemsPerPage.toString() });
+    } catch (error) {
+      console.error('Failed to save items per page setting:', error);
+      // Fallback to localStorage
+      localStorage.setItem('netcontrol_items_per_page', newItemsPerPage.toString());
+    }
   };
 
   const handlePageChange = (page) => {
@@ -173,7 +221,7 @@ const Sessions = () => {
     if (userId) {
       const selectedUser = netControlUsers?.find(user => user.id === parseInt(userId));
       if (selectedUser) {
-        setValue('net_control_call', selectedUser.call_sign);
+        setValue('net_control_call', selectedUser.callSign);
         setValue('net_control_name', selectedUser.name || selectedUser.username);
       }
     } else {
@@ -220,7 +268,7 @@ const Sessions = () => {
           </button>
           <button 
             className="btn btn-primary"
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={handleNewSession}
           >
             <Plus size={16} />
             New Session
@@ -319,7 +367,7 @@ const Sessions = () => {
                   <option value="">Select from users with callsigns...</option>
                   {netControlUsers?.map(user => (
                     <option key={user.id} value={user.id}>
-                      {user.call_sign} - {user.name || user.username}
+                      {user.callSign} - {user.name || user.username}
                     </option>
                   ))}
                 </select>
@@ -503,11 +551,25 @@ const Sessions = () => {
                   </thead>
                   <tbody>
                     {sessions.map((session) => (
-                      <tr key={session.id}>
+                      <tr 
+                        key={session.id}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                          // Don't navigate if clicking on action buttons
+                          if (e.target.closest('.btn')) return;
+                          window.location.href = `/sessions/${session.id}`;
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                      >
                         <td>
                           <div className="d-flex align-items-center">
                             <Calendar size={16} className="text-primary me-2" />
-                            <strong>{new Date(session.session_date).toLocaleDateString()}</strong>
+                            <strong>{(() => {
+                              const sessionDate = new Date(session.session_date);
+                              const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+                              return localDate.toLocaleDateString();
+                            })()}</strong>
                           </div>
                         </td>
                         <td>
@@ -659,7 +721,7 @@ const Sessions = () => {
               {!searchTerm && !dateFrom && !dateTo && (
                 <button 
                   className="btn btn-primary"
-                  onClick={() => setShowAddForm(true)}
+                  onClick={handleNewSession}
                 >
                   <Plus size={16} className="me-2" />
                   Create Your First Session

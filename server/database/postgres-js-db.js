@@ -240,6 +240,7 @@ class Database {
         ['default_net_control', '', 'Default net control callsign'],
         ['default_net_frequency', '', 'Default net frequency'],
         ['default_net_time', '', 'Default net start time'],
+        ['default_net_power', '', 'Default net power'],
         ['default_grid_square', '', 'Default grid square'],
         ['distance_unit', 'miles', 'Distance unit (miles or kilometers)'],
         
@@ -257,6 +258,10 @@ class Database {
         // QRZ settings
         ['qrz_username', '', 'QRZ.com username'],
         ['qrz_password', '', 'QRZ.com password'],
+        
+        // Pre-check-in settings
+        ['precheckin_url', 'https://brars.hamsunite.org/api/pre-checkin', 'BRARS Pre-check-in API URL'],
+        ['netreport_url', 'https://brars.hamsunite.org/api/net-report', 'Net Report submission URL'],
         
         // UI settings
         ['theme', 'light', 'UI theme (light, dark, auto)'],

@@ -150,6 +150,14 @@ const FCCDatabase = () => {
           FCC Database
         </h1>
         <div className="d-flex gap-2">
+          <a 
+            href="/fcc/schedule" 
+            className="btn btn-outline-primary"
+            title="Configure automatic FCC database updates"
+          >
+            <Clock size={16} className="me-1" />
+            Schedule
+          </a>
           <button 
             className="btn btn-secondary"
             onClick={() => queryClient.invalidateQueries('fcc-stats')}

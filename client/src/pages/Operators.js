@@ -17,11 +17,13 @@ import {
   Map
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useSettings } from '../contexts/SettingsContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import OperatorMap from '../components/OperatorMap';
 
 const Operators = () => {
+  const { getSetting, updateSettings } = useSettings();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,7 +31,7 @@ const Operators = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(() => {
-    return parseInt(localStorage.getItem('netcontrol_items_per_page')) || 25;
+    return parseInt(getSetting('items_per_page', '25'));
   });
   const [mapOperator, setMapOperator] = useState(null);
   const [showMap, setShowMap] = useState(false);
@@ -192,10 +194,18 @@ const Operators = () => {
     reset();
   };
 
-  const handleItemsPerPageChange = (newItemsPerPage) => {
+  const handleItemsPerPageChange = async (newItemsPerPage) => {
     setItemsPerPage(newItemsPerPage);
     setCurrentPage(1); // Reset to first page
-    localStorage.setItem('netcontrol_items_per_page', newItemsPerPage.toString());
+    
+    // Update in database settings
+    try {
+      await updateSettings({ items_per_page: newItemsPerPage.toString() });
+    } catch (error) {
+      console.error('Failed to save items per page setting:', error);
+      // Fallback to localStorage
+      localStorage.setItem('netcontrol_items_per_page', newItemsPerPage.toString());
+    }
   };
 
   const handlePageChange = (page) => {

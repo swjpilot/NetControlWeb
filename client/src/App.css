@@ -2633,6 +2633,161 @@ select.form-control::-moz-appearance {
   color: #f0f6fc !important;
 }
 
+/* Dark mode tooltip and popover improvements */
+[data-theme="dark"] .tooltip-inner {
+  background-color: #21262d;
+  color: #f0f6fc;
+  border: 1px solid #30363d;
+}
+
+[data-theme="dark"] .popover {
+  background-color: #161b22;
+  border-color: #30363d;
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] .popover-header {
+  background-color: #21262d;
+  border-color: #30363d;
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] .popover-body {
+  color: #f0f6fc;
+}
+
+/* Dark mode modal improvements */
+[data-theme="dark"] .modal-content {
+  background-color: #161b22;
+  border-color: #30363d;
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] .modal-header {
+  background-color: #21262d;
+  border-color: #30363d;
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] .modal-footer {
+  background-color: #21262d;
+  border-color: #30363d;
+}
+
+[data-theme="dark"] .modal-title {
+  color: #f0f6fc;
+}
+
+/* Dark mode close button */
+[data-theme="dark"] .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Dark mode breadcrumb */
+[data-theme="dark"] .breadcrumb {
+  background-color: #161b22;
+}
+
+[data-theme="dark"] .breadcrumb-item a {
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .breadcrumb-item.active {
+  color: #f0f6fc;
+}
+
+/* Dark mode progress bars */
+[data-theme="dark"] .progress {
+  background-color: #21262d;
+}
+
+[data-theme="dark"] .progress-bar {
+  background-color: #238be6;
+}
+
+/* Dark mode code blocks */
+[data-theme="dark"] code {
+  background-color: #21262d;
+  color: #f0f6fc;
+  border: 1px solid #30363d;
+}
+
+[data-theme="dark"] pre {
+  background-color: #161b22;
+  color: #f0f6fc;
+  border: 1px solid #30363d;
+}
+
+/* Dark mode blockquote */
+[data-theme="dark"] blockquote {
+  border-left-color: #30363d;
+  color: #8b949e;
+}
+
+/* Dark mode hr */
+[data-theme="dark"] hr {
+  border-color: #30363d;
+}
+
+/* Dark mode selection highlighting */
+[data-theme="dark"] ::selection {
+  background-color: rgba(88, 166, 255, 0.3);
+  color: #f0f6fc;
+}
+
+[data-theme="dark"] ::-moz-selection {
+  background-color: rgba(88, 166, 255, 0.3);
+  color: #f0f6fc;
+}
+
+/* Dark mode scrollbar (webkit browsers) */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background-color: #161b22;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background-color: #30363d;
+  border-radius: 4px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background-color: #484f58;
+}
+
+/* Dark mode focus outlines */
+[data-theme="dark"] *:focus {
+  outline-color: #58a6ff;
+}
+
+/* Dark mode placeholder text */
+[data-theme="dark"] ::placeholder {
+  color: #8b949e !important;
+  opacity: 1;
+}
+
+[data-theme="dark"] ::-webkit-input-placeholder {
+  color: #8b949e !important;
+}
+
+[data-theme="dark"] ::-moz-placeholder {
+  color: #8b949e !important;
+  opacity: 1;
+}
+
+[data-theme="dark"] :-ms-input-placeholder {
+  color: #8b949e !important;
+}
+
+/* Dark mode select dropdown arrow */
+[data-theme="dark"] select.form-control {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23f0f6fc' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e");
+}
+
 @media (prefers-color-scheme: dark) {
   [data-theme="auto"] .bg-white,
   [data-theme="auto"] [style*="background: white"],
@@ -2641,6 +2796,91 @@ select.form-control::-moz-appearance {
   [data-theme="auto"] [style*="background-color: #fff"] {
     background-color: #161b22 !important;
     color: #f0f6fc !important;
+  }
+
+  /* Auto theme tooltip and popover improvements */
+  [data-theme="auto"] .tooltip-inner {
+    background-color: #21262d;
+    color: #f0f6fc;
+    border: 1px solid #30363d;
+  }
+
+  [data-theme="auto"] .popover {
+    background-color: #161b22;
+    border-color: #30363d;
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] .popover-header {
+    background-color: #21262d;
+    border-color: #30363d;
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] .popover-body {
+    color: #f0f6fc;
+  }
+
+  /* Auto theme modal improvements */
+  [data-theme="auto"] .modal-content {
+    background-color: #161b22;
+    border-color: #30363d;
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] .modal-header {
+    background-color: #21262d;
+    border-color: #30363d;
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] .modal-footer {
+    background-color: #21262d;
+    border-color: #30363d;
+  }
+
+  [data-theme="auto"] .modal-title {
+    color: #f0f6fc;
+  }
+
+  /* Auto theme close button */
+  [data-theme="auto"] .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+  }
+
+  /* Auto theme selection highlighting */
+  [data-theme="auto"] ::selection {
+    background-color: rgba(88, 166, 255, 0.3);
+    color: #f0f6fc;
+  }
+
+  [data-theme="auto"] ::-moz-selection {
+    background-color: rgba(88, 166, 255, 0.3);
+    color: #f0f6fc;
+  }
+
+  /* Auto theme placeholder text */
+  [data-theme="auto"] ::placeholder {
+    color: #8b949e !important;
+    opacity: 1;
+  }
+
+  [data-theme="auto"] ::-webkit-input-placeholder {
+    color: #8b949e !important;
+  }
+
+  [data-theme="auto"] ::-moz-placeholder {
+    color: #8b949e !important;
+    opacity: 1;
+  }
+
+  [data-theme="auto"] :-ms-input-placeholder {
+    color: #8b949e !important;
+  }
+
+  /* Auto theme select dropdown arrow */
+  [data-theme="auto"] select.form-control {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23f0f6fc' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e");
   }
 }
 /* Ensure no strikethrough styling on any session data */

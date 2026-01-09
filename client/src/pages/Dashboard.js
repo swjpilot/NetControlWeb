@@ -130,7 +130,17 @@ const Dashboard = () => {
                     </thead>
                     <tbody>
                       {recentSessions.map((session) => (
-                        <tr key={session.id}>
+                        <tr 
+                          key={session.id}
+                          style={{ cursor: 'pointer' }}
+                          onClick={(e) => {
+                            // Don't navigate if clicking on the View button
+                            if (e.target.closest('.btn')) return;
+                            window.location.href = `/sessions/${session.id}`;
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                        >
                           <td>
                             <div className="d-flex align-items-center">
                               <Calendar size={16} className="text-muted me-2" />

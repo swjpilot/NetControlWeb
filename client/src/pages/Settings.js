@@ -14,10 +14,12 @@ import {
   X,
   Loader,
   AlertTriangle,
-  Send
+  Send,
+  Link
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSettings } from '../contexts/SettingsContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -26,6 +28,7 @@ const Settings = () => {
   const [testResults, setTestResults] = useState({});
   const queryClient = useQueryClient();
   const { theme, changeTheme } = useTheme();
+  const { loadSettings } = useSettings();
 
   // Separate forms for each tab
   const qrzForm = useForm();
@@ -34,6 +37,7 @@ const Settings = () => {
   const databaseForm = useForm();
   const uiForm = useForm();
   const securityForm = useForm();
+  const integrationForm = useForm();
 
   // Map tabs to their respective forms
   const tabForms = {
@@ -42,7 +46,8 @@ const Settings = () => {
     email: emailForm,
     database: databaseForm,
     ui: uiForm,
-    security: securityForm
+    security: securityForm,
+    integration: integrationForm
   };
 
   // Get current form based on active tab
@@ -74,6 +79,8 @@ const Settings = () => {
     {
       onSuccess: (response) => {
         queryClient.invalidateQueries('settings');
+        // Refresh settings context
+        loadSettings();
         toast.success('Settings updated successfully');
       },
       onError: (error) => {
@@ -195,11 +202,12 @@ const Settings = () => {
   const filterDataForTab = (data, tab) => {
     const tabFields = {
       qrz: ['qrz_username', 'qrz_password'],
-      app: ['app_name', 'app_description', 'default_net_control', 'default_net_frequency', 'default_net_time', 'default_grid_square', 'distance_unit'],
+      app: ['app_name', 'app_description', 'default_net_control', 'default_net_frequency', 'default_net_time', 'default_net_power', 'default_grid_square', 'distance_unit'],
       email: ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_starttls', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
       database: ['auto_backup_enabled', 'auto_backup_interval'],
       ui: ['theme', 'items_per_page'],
-      security: ['session_timeout', 'require_password_change', 'min_password_length']
+      security: ['session_timeout', 'require_password_change', 'min_password_length'],
+      integration: ['precheckin_url', 'netreport_url']
     };
 
     const relevantFields = tabFields[tab] || [];
@@ -276,6 +284,7 @@ const Settings = () => {
     { id: 'qrz', label: 'QRZ Integration', icon: Radio },
     { id: 'app', label: 'Application', icon: SettingsIcon },
     { id: 'email', label: 'Email/SMTP', icon: Mail },
+    { id: 'integration', label: 'External Services', icon: Link },
     { id: 'database', label: 'Database', icon: Database },
     { id: 'ui', label: 'User Interface', icon: Palette },
     { id: 'security', label: 'Security', icon: Shield }
@@ -475,6 +484,18 @@ const Settings = () => {
                         />
                       </div>
                       <div className="form-group">
+                        <label className="form-label">Default Power</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g., 50W"
+                          {...currentForm.register('default_net_power')}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="form-row">
+                      <div className="form-group">
                         <label className="form-label">Default Grid Square</label>
                         <input
                           type="text"
@@ -484,14 +505,13 @@ const Settings = () => {
                           maxLength="10"
                         />
                       </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Distance Unit</label>
-                      <select className="form-control" {...currentForm.register('distance_unit')}>
-                        <option value="miles">Miles</option>
-                        <option value="kilometers">Kilometers</option>
-                      </select>
+                      <div className="form-group">
+                        <label className="form-label">Distance Unit</label>
+                        <select className="form-control" {...currentForm.register('distance_unit')}>
+                          <option value="miles">Miles</option>
+                          <option value="kilometers">Kilometers</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -782,6 +802,47 @@ const Settings = () => {
                           Require users to change password on first login
                         </label>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Integration Settings */}
+                {activeTab === 'integration' && (
+                  <div>
+                    <h3 className="mb-3">External Services Integration</h3>
+                    
+                    <h4 className="mt-4 mb-3">BRARS Pre-Net Check-In</h4>
+                    <div className="form-group">
+                      <label className="form-label">Pre-Check-In URL</label>
+                      <input
+                        type="url"
+                        className="form-control"
+                        placeholder="https://brars.hamsunite.org/api/pre-checkin"
+                        {...currentForm.register('precheckin_url')}
+                      />
+                      <div className="form-text">
+                        URL to fetch pre-check-in participant data from BRARS website
+                      </div>
+                    </div>
+
+                    <h4 className="mt-4 mb-3">Net Report Submission</h4>
+                    <div className="form-group">
+                      <label className="form-label">Net Report URL</label>
+                      <input
+                        type="url"
+                        className="form-control"
+                        placeholder="https://brars.hamsunite.org/api/net-report"
+                        {...currentForm.register('netreport_url')}
+                      />
+                      <div className="form-text">
+                        URL to submit completed net reports (for future use)
+                      </div>
+                    </div>
+
+                    <div className="alert alert-info">
+                      <AlertTriangle size={16} className="me-2" />
+                      <strong>Note:</strong> These URLs connect to external services for pre-check-in data 
+                      and net report submission. Ensure the URLs are correct and the services are accessible.
                     </div>
                   </div>
                 )}

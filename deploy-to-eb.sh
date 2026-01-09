@@ -23,6 +23,26 @@ fi
 
 echo "✅ Prerequisites check passed"
 
+# Update version with new build timestamp
+echo "🔄 Updating version..."
+BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+ISO_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+
+cat > version.js << EOF
+// Auto-generated version file - do not edit manually
+const version = {
+  major: '1.1',
+  build: '${BUILD_TIMESTAMP}',
+  timestamp: '${ISO_TIMESTAMP}',
+  environment: process.env.NODE_ENV || 'production',
+  features: ['FCC Lambda Integration', 'Pre-Check-In', 'QRZ Lookup', 'PostgreSQL Database']
+};
+module.exports = version;
+
+EOF
+
+echo "✅ Version updated to build ${BUILD_TIMESTAMP}"
+
 # Build the React client
 echo "📦 Building React client..."
 cd client && npm run build && cd ..
@@ -47,8 +67,12 @@ fi
 
 echo "🎉 Deployment complete!"
 echo ""
-echo "🌐 Opening application..."
-eb open --profile thejohnweb
+echo "🌐 Application URLs:"
+echo "   EB URL: https://netcontrol-prod.eba-tu7jpbdw.us-east-1.elasticbeanstalk.com"
+echo "   Custom domain: https://netcontrol.hamsunite.org"
+echo ""
+echo "💡 To open the application, visit one of the URLs above or run:"
+echo "   eb open --profile thejohnweb"
 
 echo ""
 echo "📊 Environment status:"

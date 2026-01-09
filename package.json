@@ -24,7 +24,8 @@
     "unzipper": "^0.10.14",
     "csv-parser": "^3.0.0",
     "axios": "^1.6.2",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "aws-sdk": "^2.1691.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

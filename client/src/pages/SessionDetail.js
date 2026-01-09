@@ -41,6 +41,13 @@ const SessionDetail = () => {
   const [showPreCheckIn, setShowPreCheckIn] = useState(false);
   const [preCheckInData, setPreCheckInData] = useState(null);
   const [selectedPreCheckIns, setSelectedPreCheckIns] = useState(new Set());
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualEntryData, setManualEntryData] = useState({
+    name: '',
+    email: '',
+    location: '',
+    licenseClass: ''
+  });
   const callSignInputRef = useRef(null);
   
   // Traffic form specific states
@@ -76,6 +83,64 @@ const SessionDetail = () => {
 
   const operators = useMemo(() => operatorsData || [], [operatorsData]);
 
+  // QRZ lookup mutation (defined early to avoid use-before-define issues)
+  const qrzLookupMutation = useMutation(
+    (callSign) => axios.get(`/api/qrz/lookup/${callSign}`),
+    {
+      onSuccess: (response) => {
+        const data = response.data;
+        
+        // Map QRZ license class codes to full names
+        const mapLicenseClass = (qrzClass) => {
+          if (!qrzClass) return '';
+          
+          const classMap = {
+            'E': 'Amateur Extra',
+            'A': 'Advanced',
+            'G': 'General',
+            'T': 'Technician',
+            'N': 'Novice',
+            'P': 'Technician Plus',
+            'Amateur Extra': 'Amateur Extra',
+            'Advanced': 'Advanced',
+            'General': 'General',
+            'Technician': 'Technician',
+            'Novice': 'Novice'
+          };
+          
+          return classMap[qrzClass] || qrzClass;
+        };
+        
+        // Store QRZ data for later use when adding as operator
+        const mappedData = {
+          ...data,
+          licenseClass: mapLicenseClass(data.licenseClass)
+        };
+        
+        setQrzLookupData(mappedData);
+        
+        // Update form field with the call sign from QRZ data
+        participantForm.setValue('call_sign', mappedData.callsign);
+        
+        toast.success(`Found information for ${mappedData.callsign}`);
+      },
+      onError: (error) => {
+        const message = error.response?.data?.error || 'QRZ lookup failed';
+        toast.error(message);
+        setQrzLookupData(null);
+        
+        // Show manual entry form if QRZ lookup fails
+        setShowManualEntry(true);
+        setManualEntryData({
+          name: '',
+          email: '',
+          location: '',
+          licenseClass: ''
+        });
+      }
+    }
+  );
+
   // Filter operators based on call sign input
   useEffect(() => {
     if (callSignInput.length >= 2) {
@@ -89,6 +154,26 @@ const SessionDetail = () => {
       setShowSuggestions(false);
     }
   }, [callSignInput, operators]);
+
+  // Auto QRZ lookup after user stops typing (debounced)
+  useEffect(() => {
+    if (callSignInput.length >= 3 && !selectedOperator && !qrzLookupData) {
+      // Check if this call sign exists in operators database first
+      const existingOperator = operators.find(op => 
+        op.call_sign.toUpperCase() === callSignInput.toUpperCase()
+      );
+      
+      if (!existingOperator) {
+        // Set up debounced QRZ lookup
+        const timeoutId = setTimeout(() => {
+          console.log('Auto-triggering QRZ lookup for:', callSignInput);
+          qrzLookupMutation.mutate(callSignInput.toUpperCase());
+        }, 2000); // Wait 2 seconds after user stops typing
+        
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [callSignInput, operators, selectedOperator, qrzLookupData, qrzLookupMutation]);
 
   // Filter FROM operators for traffic form
   useEffect(() => {
@@ -233,51 +318,6 @@ const SessionDetail = () => {
     }
   );
 
-  // QRZ lookup mutation
-  const qrzLookupMutation = useMutation(
-    (callSign) => axios.get(`/api/qrz/lookup/${callSign}`),
-    {
-      onSuccess: (response) => {
-        const data = response.data;
-        
-        // Map QRZ license class codes to full names
-        const mapLicenseClass = (qrzClass) => {
-          if (!qrzClass) return '';
-          
-          const classMap = {
-            'E': 'Amateur Extra',
-            'A': 'Advanced',
-            'G': 'General',
-            'T': 'Technician',
-            'N': 'Novice',
-            'P': 'Technician Plus',
-            'Amateur Extra': 'Amateur Extra',
-            'Advanced': 'Advanced',
-            'General': 'General',
-            'Technician': 'Technician',
-            'Novice': 'Novice'
-          };
-          
-          return classMap[qrzClass] || qrzClass;
-        };
-        
-        // Store QRZ data for later use when adding as operator
-        const mappedData = {
-          ...data,
-          licenseClass: mapLicenseClass(data.licenseClass)
-        };
-        
-        setQrzLookupData(mappedData);
-        toast.success(`Found information for ${mappedData.callSign}`);
-      },
-      onError: (error) => {
-        const message = error.response?.data?.error || 'QRZ lookup failed';
-        toast.error(message);
-        setQrzLookupData(null);
-      }
-    }
-  );
-
   // Add operator mutation (for creating operator from QRZ data)
   const addOperatorMutation = useMutation(
     (operatorData) => {
@@ -313,7 +353,7 @@ const SessionDetail = () => {
         const message = error.response?.data?.error || 'Failed to add operator';
         if (message.includes('already exists')) {
           // If operator already exists, try to find them and add as participant
-          const callSign = qrzLookupData?.callSign;
+          const callSign = qrzLookupData?.callsign;
           if (callSign) {
             // Refresh operators list first
             queryClient.invalidateQueries('operators-list');
@@ -495,9 +535,11 @@ const SessionDetail = () => {
     console.log('Submitting participant data:', data);
     console.log('Selected operator:', selectedOperator);
     console.log('QRZ lookup data:', qrzLookupData);
+    console.log('Call sign input:', callSignInput);
+    console.log('Form data call_sign:', data.call_sign);
     
-    // Use selected operator or call sign input
-    const finalCallSign = selectedOperator?.call_sign || callSignInput.trim();
+    // Use selected operator call sign, form data call sign, or call sign input
+    const finalCallSign = selectedOperator?.call_sign || data.call_sign || callSignInput.trim();
     const finalOperatorId = selectedOperator?.id || data.operator_id;
     
     // Validate that we have a call sign
@@ -507,17 +549,17 @@ const SessionDetail = () => {
     }
     
     // If we have QRZ data and no selected operator, create the operator first
-    if (!selectedOperator && qrzLookupData && qrzLookupData.callSign.toUpperCase() === finalCallSign.toUpperCase()) {
+    if (!selectedOperator && qrzLookupData && qrzLookupData.callsign && qrzLookupData.callsign.toUpperCase() === finalCallSign.toUpperCase()) {
       console.log('Creating operator from QRZ data first');
       const operatorData = {
-        callSign: qrzLookupData.callSign,
+        call_sign: qrzLookupData.callsign,
         name: qrzLookupData.name || '',
-        street: qrzLookupData.address || '',
-        location: [qrzLookupData.city, qrzLookupData.state].filter(Boolean).join(', ') || '',
+        address: qrzLookupData.address || '',
+        city: qrzLookupData.city || '',
+        state: qrzLookupData.state || '',
         email: qrzLookupData.email || '',
-        class: qrzLookupData.licenseClass || '',
-        grid: qrzLookupData.grid || '',
-        comment: `Added from QRZ lookup during session check-in on ${new Date().toLocaleDateString()}`
+        license_class: qrzLookupData.licenseClass || '',
+        notes: `Added from QRZ lookup during session check-in on ${new Date().toLocaleDateString()}. Grid: ${qrzLookupData.grid || 'N/A'}`
       };
       
       // Add operator first, then the mutation will handle adding the participant
@@ -591,6 +633,13 @@ const SessionDetail = () => {
     setQrzLookupData(null);
     setSelectedOperator(null);
     setCallSignInput('');
+    setShowManualEntry(false);
+    setManualEntryData({
+      name: '',
+      email: '',
+      location: '',
+      licenseClass: ''
+    });
     
     // Focus back to input if form is still open
     if (!editingParticipant) {
@@ -638,11 +687,98 @@ const SessionDetail = () => {
       );
       
       if (existingOperator) {
-        // If operator exists, select them
+        // If operator exists, select them and add as participant
         handleOperatorSelect(existingOperator);
         toast.success(`Found existing operator: ${existingOperator.call_sign}`);
+        
+        // Auto-submit the form after a short delay to allow state updates
+        setTimeout(() => {
+          const formData = {
+            operator_id: existingOperator.id,
+            call_sign: existingOperator.call_sign,
+            check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
+            check_out_time: participantForm.getValues('check_out_time') || '',
+            notes: participantForm.getValues('notes') || ''
+          };
+          onSubmitParticipant(formData);
+        }, 100);
+      } else if (qrzLookupData && qrzLookupData.callsign && qrzLookupData.callsign.toUpperCase() === callSign.toUpperCase()) {
+        // If we already have QRZ data for this call sign, add as participant
+        console.log('Adding participant with existing QRZ data');
+        const participantData = {
+          operator_id: null,
+          call_sign: callSign,
+          check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
+          check_out_time: participantForm.getValues('check_out_time') || '',
+          notes: participantForm.getValues('notes') || ''
+        };
+        
+        // Create operator from QRZ data first
+        const operatorData = {
+          call_sign: qrzLookupData.callsign,
+          name: qrzLookupData.name || '',
+          address: qrzLookupData.address || '',
+          city: qrzLookupData.city || '',
+          state: qrzLookupData.state || '',
+          email: qrzLookupData.email || '',
+          license_class: qrzLookupData.licenseClass || '',
+          notes: `Added from QRZ lookup during session check-in on ${new Date().toLocaleDateString()}. Grid: ${qrzLookupData.grid || 'N/A'}`
+        };
+        
+        // Create operator first, then add as participant
+        axios.post('/api/operators', operatorData)
+          .then((response) => {
+            const newOperator = response.data.operator;
+            console.log('Operator created from QRZ data:', newOperator);
+            
+            // Update the operators list
+            queryClient.invalidateQueries('operators-list');
+            
+            // Add the participant with the new operator ID
+            const updatedParticipantData = {
+              ...participantData,
+              operator_id: newOperator.id,
+              call_sign: newOperator.call_sign
+            };
+            
+            addParticipantMutation.mutate(updatedParticipantData);
+            toast.success(`${newOperator.call_sign} added from QRZ data`);
+          })
+          .catch((error) => {
+            console.error('Failed to create operator from QRZ:', error);
+            const message = error.response?.data?.error || 'Failed to add operator';
+            
+            if (message.includes('already exists')) {
+              // If operator already exists, find them and add as participant
+              queryClient.invalidateQueries('operators-list');
+              
+              setTimeout(() => {
+                const existingOperator = operators.find(op => 
+                  op.call_sign.toUpperCase() === callSign.toUpperCase()
+                );
+                if (existingOperator) {
+                  const updatedParticipantData = {
+                    ...participantData,
+                    operator_id: existingOperator.id,
+                    call_sign: existingOperator.call_sign
+                  };
+                  addParticipantMutation.mutate(updatedParticipantData);
+                  toast.success(`Using existing operator record for ${callSign}`);
+                } else {
+                  // Fallback to call sign only
+                  addParticipantMutation.mutate(participantData);
+                  toast.success(`Added ${callSign} (call sign only)`);
+                }
+              }, 500);
+            } else {
+              // Fallback to call sign only
+              addParticipantMutation.mutate(participantData);
+              toast.success(`Added ${callSign} (call sign only)`);
+            }
+          });
       } else {
-        // If not found, perform QRZ lookup
+        // If not found and no QRZ data, perform QRZ lookup
+        // If QRZ lookup fails, it will show the manual entry form
         handleQRZLookup();
       }
     }
@@ -753,6 +889,119 @@ const SessionDetail = () => {
     addSinglePreCheckInMutation.mutate(participant);
   };
 
+  const handleManualEntryChange = (field, value) => {
+    setManualEntryData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleManualEntrySubmit = () => {
+    const callSign = callSignInput.trim();
+    if (!callSign) {
+      toast.error('Please enter a call sign');
+      return;
+    }
+
+    // Create operator data from manual entry
+    const operatorData = {
+      callSign: callSign,
+      name: manualEntryData.name || '',
+      email: manualEntryData.email || '',
+      location: manualEntryData.location || '',
+      class: manualEntryData.licenseClass || '',
+      comment: `Added manually during session check-in on ${new Date().toLocaleDateString()}`
+    };
+
+    // Create operator first, then add as participant
+    console.log('Creating operator from manual entry:', operatorData);
+    
+    // Call the operator creation API directly
+    axios.post('/api/operators', operatorData)
+      .then((response) => {
+        const newOperator = response.data.operator;
+        console.log('Operator created successfully:', newOperator);
+        
+        // Update the operators list
+        queryClient.invalidateQueries('operators-list');
+        
+        // Add the participant with the new operator ID
+        const participantData = {
+          operator_id: newOperator.id,
+          call_sign: newOperator.call_sign,
+          check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
+          check_out_time: participantForm.getValues('check_out_time') || '',
+          notes: participantForm.getValues('notes') || ''
+        };
+        
+        console.log('Adding participant with new operator ID:', participantData);
+        addParticipantMutation.mutate(participantData);
+        
+        toast.success(`${newOperator.call_sign} added to operators database`);
+        setShowManualEntry(false);
+      })
+      .catch((error) => {
+        console.error('Failed to create operator:', error);
+        const message = error.response?.data?.error || 'Failed to add operator';
+        
+        if (message.includes('already exists')) {
+          // If operator already exists, try to find them and add as participant
+          queryClient.invalidateQueries('operators-list');
+          
+          setTimeout(() => {
+            const existingOperator = operators.find(op => 
+              op.call_sign.toUpperCase() === callSign.toUpperCase()
+            );
+            if (existingOperator) {
+              const participantData = {
+                operator_id: existingOperator.id,
+                call_sign: existingOperator.call_sign,
+                check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
+                check_out_time: participantForm.getValues('check_out_time') || '',
+                notes: participantForm.getValues('notes') || ''
+              };
+              addParticipantMutation.mutate(participantData);
+              toast.success(`Using existing operator record for ${callSign}`);
+              setShowManualEntry(false);
+            }
+          }, 500);
+        } else {
+          toast.error(message);
+        }
+      });
+  };
+
+  const handleManualEntryCancel = () => {
+    setShowManualEntry(false);
+    setManualEntryData({
+      name: '',
+      email: '',
+      location: '',
+      licenseClass: ''
+    });
+  };
+
+  const handleManualEntrySkip = () => {
+    const callSign = callSignInput.trim();
+    if (!callSign) {
+      toast.error('Please enter a call sign');
+      return;
+    }
+
+    // Add participant without creating operator record
+    const participantData = {
+      operator_id: null,
+      call_sign: callSign,
+      check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
+      check_out_time: participantForm.getValues('check_out_time') || '',
+      notes: participantForm.getValues('notes') || ''
+    };
+    
+    console.log('Adding participant without operator record:', participantData);
+    addParticipantMutation.mutate(participantData);
+    setShowManualEntry(false);
+  };
+
   const getCurrentTime = () => {
     return new Date().toTimeString().slice(0, 5);
   };
@@ -797,7 +1046,11 @@ const SessionDetail = () => {
           <div>
             <h1>
               <Calendar size={24} className="me-2" />
-              Session: {new Date(sessionData.session_date).toLocaleDateString()}
+              Session: {(() => {
+                const sessionDate = new Date(sessionData.session_date);
+                const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+                return localDate.toLocaleDateString();
+              })()}
             </h1>
             <p className="text-muted mb-0">
               Net Control: {sessionData.net_control_call}
@@ -819,7 +1072,11 @@ const SessionDetail = () => {
                 <div className="info-item">
                   <Calendar size={16} className="text-muted me-2" />
                   <strong>Date:</strong>
-                  <span className="ms-2">{new Date(sessionData.session_date).toLocaleDateString()}</span>
+                  <span className="ms-2">{(() => {
+                    const sessionDate = new Date(sessionData.session_date);
+                    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+                    return localDate.toLocaleDateString();
+                  })()}</span>
                 </div>
                 
                 <div className="info-item">
@@ -958,7 +1215,21 @@ const SessionDetail = () => {
                   </button>
                   <button 
                     className="btn btn-primary"
-                    onClick={() => setShowAddParticipant(true)}
+                    onClick={() => {
+                      setShowAddParticipant(true);
+                      // Initialize form with default values
+                      participantForm.setValue('check_in_time', getCurrentTime());
+                      participantForm.setValue('check_out_time', '');
+                      participantForm.setValue('notes', '');
+                      participantForm.setValue('call_sign', '');
+                      participantForm.setValue('operator_id', '');
+                      // Focus on the call sign input after a short delay
+                      setTimeout(() => {
+                        if (callSignInputRef.current) {
+                          callSignInputRef.current.focus();
+                        }
+                      }, 100);
+                    }}
                   >
                     <UserPlus size={16} className="me-2" />
                     Add Participant
@@ -1063,11 +1334,43 @@ const SessionDetail = () => {
                             </div>
                           )}
                           
+                          {/* QRZ Data Found Indicator */}
+                          {qrzLookupData && !selectedOperator && (
+                            <div className="qrz-data-found mt-2">
+                              <div className="alert alert-info mb-0">
+                                <div className="d-flex align-items-center">
+                                  <Search size={16} className="me-2" />
+                                  <div>
+                                    <strong>QRZ Data Found: {qrzLookupData.callsign}</strong>
+                                    {qrzLookupData.name && (
+                                      <span className="ms-2">- {qrzLookupData.name}</span>
+                                    )}
+                                    <div className="small">
+                                      {qrzLookupData.city && qrzLookupData.state && `${qrzLookupData.city}, ${qrzLookupData.state}`}
+                                      {qrzLookupData.licenseClass && ` • ${qrzLookupData.licenseClass} Class`}
+                                    </div>
+                                    <div className="small text-muted">
+                                      Will be added to operators database when you submit
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          
                           <div className="form-text">
-                            {callSignInput.length >= 2 && filteredOperators.length === 0 && !selectedOperator ? 
-                              'No existing operators found. Press Enter or click search to lookup from QRZ.' :
-                              'Type 2+ characters to search existing operators, or press Enter to lookup new callsigns from QRZ.'
-                            }
+                            {qrzLookupMutation.isLoading ? (
+                              <div className="text-info">
+                                <Loader size={12} className="animate-spin me-1" />
+                                Looking up {callSignInput} in QRZ database...
+                              </div>
+                            ) : callSignInput.length >= 2 && filteredOperators.length === 0 && !selectedOperator && !qrzLookupData ? (
+                              <div className="text-muted">
+                                No existing operators found. {callSignInput.length >= 3 ? 'Auto-lookup from QRZ in progress...' : 'Type more characters for auto QRZ lookup.'}
+                              </div>
+                            ) : (
+                              'Type 2+ characters to search existing operators. QRZ lookup happens automatically after 3+ characters.'
+                            )}
                           </div>
                         </div>
                         
@@ -1083,7 +1386,7 @@ const SessionDetail = () => {
                             <div>
                               <h6 className="mb-2">
                                 <Radio size={16} className="me-2" />
-                                QRZ Information for {qrzLookupData.callSign}
+                                QRZ Information for {qrzLookupData.callsign}
                               </h6>
                               <div className="row">
                                 <div className="col-md-6">
@@ -1128,6 +1431,100 @@ const SessionDetail = () => {
                             >
                               ×
                             </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Manual Entry Form */}
+                      {showManualEntry && (
+                        <div className="alert alert-warning mb-3">
+                          <div className="d-flex justify-content-between align-items-start">
+                            <div className="flex-grow-1">
+                              <h6 className="mb-2">
+                                <User size={16} className="me-2" />
+                                Manual Entry for {callSignInput}
+                              </h6>
+                              <div className="small text-muted mb-3">
+                                QRZ lookup failed. You can enter operator information manually or skip to add just the call sign.
+                              </div>
+                              
+                              <div className="row">
+                                <div className="col-md-6">
+                                  <div className="form-group mb-2">
+                                    <label className="form-label small">Name</label>
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Operator name"
+                                      value={manualEntryData.name}
+                                      onChange={(e) => handleManualEntryChange('name', e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="form-group mb-2">
+                                    <label className="form-label small">License Class</label>
+                                    <select
+                                      className="form-control form-control-sm"
+                                      value={manualEntryData.licenseClass}
+                                      onChange={(e) => handleManualEntryChange('licenseClass', e.target.value)}
+                                    >
+                                      <option value="">Select class</option>
+                                      <option value="Amateur Extra">Amateur Extra</option>
+                                      <option value="Advanced">Advanced</option>
+                                      <option value="General">General</option>
+                                      <option value="Technician">Technician</option>
+                                      <option value="Novice">Novice</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="col-md-6">
+                                  <div className="form-group mb-2">
+                                    <label className="form-label small">Email</label>
+                                    <input
+                                      type="email"
+                                      className="form-control form-control-sm"
+                                      placeholder="email@example.com"
+                                      value={manualEntryData.email}
+                                      onChange={(e) => handleManualEntryChange('email', e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="form-group mb-2">
+                                    <label className="form-label small">Location</label>
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="City, State"
+                                      value={manualEntryData.location}
+                                      onChange={(e) => handleManualEntryChange('location', e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="d-flex gap-2 mt-3">
+                                <button 
+                                  type="button"
+                                  className="btn btn-sm btn-success"
+                                  onClick={handleManualEntrySubmit}
+                                >
+                                  <User size={14} className="me-1" />
+                                  Create & Add
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={handleManualEntrySkip}
+                                >
+                                  Skip & Add Call Sign Only
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="btn btn-sm btn-outline-secondary"
+                                  onClick={handleManualEntryCancel}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1196,6 +1593,13 @@ const SessionDetail = () => {
                               setQrzLookupData(null);
                               setSelectedOperator(null);
                               setCallSignInput('');
+                              setShowManualEntry(false);
+                              setManualEntryData({
+                                name: '',
+                                email: '',
+                                location: '',
+                                licenseClass: ''
+                              });
                               participantForm.reset();
                             }}
                           >
@@ -1225,7 +1629,17 @@ const SessionDetail = () => {
                     </thead>
                     <tbody>
                       {sessionData.participants.map((participant) => (
-                        <tr key={participant.id}>
+                        <tr 
+                          key={participant.id}
+                          style={{ cursor: 'pointer' }}
+                          onClick={(e) => {
+                            // Don't trigger edit if clicking on action buttons
+                            if (e.target.closest('.btn')) return;
+                            handleEditParticipant(participant);
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                        >
                           <td>
                             <div className="d-flex align-items-center">
                               <Radio size={16} className="text-primary me-2" />
@@ -1300,7 +1714,21 @@ const SessionDetail = () => {
                   <p className="text-muted">No participants recorded yet</p>
                   <button 
                     className="btn btn-primary"
-                    onClick={() => setShowAddParticipant(true)}
+                    onClick={() => {
+                      setShowAddParticipant(true);
+                      // Initialize form with default values
+                      participantForm.setValue('check_in_time', getCurrentTime());
+                      participantForm.setValue('check_out_time', '');
+                      participantForm.setValue('notes', '');
+                      participantForm.setValue('call_sign', '');
+                      participantForm.setValue('operator_id', '');
+                      // Focus on the call sign input after a short delay
+                      setTimeout(() => {
+                        if (callSignInputRef.current) {
+                          callSignInputRef.current.focus();
+                        }
+                      }, 100);
+                    }}
                   >
                     <UserPlus size={16} className="me-2" />
                     Add First Participant
@@ -1530,7 +1958,7 @@ const SessionDetail = () => {
                           className="form-control"
                           rows="3"
                           placeholder="Message content..."
-                          {...trafficForm.register('message_content')}
+                          {...trafficForm.register('message_text')}
                         />
                       </div>
 
@@ -1601,7 +2029,30 @@ const SessionDetail = () => {
                     </thead>
                     <tbody>
                       {sessionData.traffic.map((traffic) => (
-                        <tr key={traffic.id}>
+                        <tr 
+                          key={traffic.id}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            // Show traffic details in an alert or modal
+                            const details = [
+                              `Time: ${new Date(traffic.created_at).toLocaleString()}`,
+                              `From: ${traffic.from_call || traffic.from_operator_call}${traffic.from_operator_name ? ` (${traffic.from_operator_name})` : ''}`,
+                              `To: ${traffic.to_call || traffic.to_operator_call}${traffic.to_operator_name ? ` (${traffic.to_operator_name})` : ''}`,
+                              `Type: ${traffic.message_type}`,
+                              `Precedence: ${traffic.precedence}`,
+                              traffic.message_number ? `Message Number: ${traffic.message_number}` : '',
+                              traffic.time_received ? `Time Received: ${traffic.time_received}` : '',
+                              traffic.handled_by ? `Handled By: ${traffic.handled_by}` : '',
+                              traffic.message_text ? `Message: ${traffic.message_text}` : '',
+                              traffic.notes ? `Notes: ${traffic.notes}` : ''
+                            ].filter(Boolean).join('\n');
+                            
+                            alert(details);
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                          title="Click to view full traffic details"
+                        >
                           <td>
                             <div className="small text-muted">
                               {new Date(traffic.created_at).toLocaleTimeString()}
@@ -1636,8 +2087,8 @@ const SessionDetail = () => {
                             </span>
                           </td>
                           <td>
-                            {traffic.message_content && (
-                              <div className="small">{traffic.message_content}</div>
+                            {traffic.message_text && (
+                              <div className="small">{traffic.message_text}</div>
                             )}
                             {traffic.notes && (
                               <div className="small text-muted mt-1">{traffic.notes}</div>

@@ -1,0 +1,16 @@
+{
+  "name": "fcc-database-processor",
+  "version": "1.0.0",
+  "description": "AWS Lambda function to process FCC database downloads",
+  "main": "index.js",
+  "dependencies": {
+    "aws-sdk": "^2.1691.0",
+    "axios": "^1.6.2",
+    "csv-parser": "^3.0.0",
+    "pg": "^8.11.3",
+    "unzipper": "^0.10.14"
+  },
+  "scripts": {
+    "package": "zip -r fcc-processor.zip ."
+  }
+}

@@ -207,13 +207,25 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const session = sessionResult[0];
     console.log('✅ Found session:', session.id, session.net_control_call);
     
-    // Get participants
+    // Get participants with operator information
     const participants = await db.sql`
-      SELECT id, call_sign, name, check_in_time, check_out_time, notes, 
-             created_at, updated_at, operator_id
-      FROM session_participants
-      WHERE session_id = ${sessionId}
-      ORDER BY check_in_time ASC, call_sign ASC
+      SELECT sp.id, sp.call_sign, sp.name, sp.check_in_time, sp.check_out_time, sp.notes, 
+             sp.created_at, sp.updated_at, sp.operator_id,
+             o.name as operator_name, 
+             o.city as operator_city,
+             o.state as operator_state,
+             o.license_class,
+             COALESCE(sp.name, o.name) as display_name,
+             CASE 
+               WHEN o.city IS NOT NULL AND o.state IS NOT NULL THEN o.city || ', ' || o.state
+               WHEN o.city IS NOT NULL THEN o.city
+               WHEN o.state IS NOT NULL THEN o.state
+               ELSE ''
+             END as display_location
+      FROM session_participants sp
+      LEFT JOIN operators o ON sp.operator_id = o.id
+      WHERE sp.session_id = ${sessionId}
+      ORDER BY sp.check_in_time ASC, sp.call_sign ASC
     `;
     
     // Get traffic
@@ -370,7 +382,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 router.post('/:id/participants', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { call_sign, name, check_in_time, check_out_time, notes } = req.body;
+    const { call_sign, name, check_in_time, check_out_time, notes, operator_id } = req.body;
     
     if (!call_sign) {
       return res.status(400).json({ error: 'Call sign is required' });
@@ -395,12 +407,43 @@ router.post('/:id/participants', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Participant already exists in this session' });
     }
     
+    let finalOperatorId = operator_id;
+    let operatorCreated = false;
+    
+    // If no operator_id provided, try to find or create operator
+    if (!finalOperatorId) {
+      // First, try to find existing operator by call sign
+      const existingOperator = await db.sql`
+        SELECT id FROM operators WHERE call_sign = ${call_sign.toUpperCase()}
+      `;
+      
+      if (existingOperator.length > 0) {
+        finalOperatorId = existingOperator[0].id;
+        console.log(`Found existing operator for ${call_sign}: ID ${finalOperatorId}`);
+      } else if (name) {
+        // Create new operator if we have a name
+        try {
+          const newOperator = await db.sql`
+            INSERT INTO operators (call_sign, name, active)
+            VALUES (${call_sign.toUpperCase()}, ${name}, true)
+            RETURNING id
+          `;
+          finalOperatorId = newOperator[0].id;
+          operatorCreated = true;
+          console.log(`Created new operator for ${call_sign}: ID ${finalOperatorId}`);
+        } catch (operatorError) {
+          console.error('Error creating operator:', operatorError);
+          // Continue without operator_id if creation fails
+        }
+      }
+    }
+    
     const result = await db.sql`
       INSERT INTO session_participants (
-        session_id, call_sign, name, check_in_time, check_out_time, notes
+        session_id, call_sign, name, check_in_time, check_out_time, notes, operator_id
       ) VALUES (
         ${id}, ${call_sign.toUpperCase()}, ${name || null}, 
-        ${check_in_time || null}, ${check_out_time || null}, ${notes || null}
+        ${check_in_time || null}, ${check_out_time || null}, ${notes || null}, ${finalOperatorId || null}
       ) RETURNING *
     `;
     
@@ -414,7 +457,10 @@ router.post('/:id/participants', authenticateToken, async (req, res) => {
       WHERE id = ${id}
     `;
     
-    res.status(201).json(result[0]);
+    res.status(201).json({
+      ...result[0],
+      operator_created: operatorCreated
+    });
     
   } catch (error) {
     console.error('Add participant error:', error);
@@ -426,7 +472,7 @@ router.post('/:id/participants', authenticateToken, async (req, res) => {
 router.put('/:sessionId/participants/:participantId', authenticateToken, async (req, res) => {
   try {
     const { sessionId, participantId } = req.params;
-    const { call_sign, name, check_in_time, check_out_time, notes } = req.body;
+    const { call_sign, name, check_in_time, check_out_time, notes, operator_id } = req.body;
     
     if (!call_sign) {
       return res.status(400).json({ error: 'Call sign is required' });
@@ -449,6 +495,7 @@ router.put('/:sessionId/participants/:participantId', authenticateToken, async (
         check_in_time = ${check_in_time || null},
         check_out_time = ${check_out_time || null},
         notes = ${notes || null},
+        operator_id = ${operator_id || null},
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${participantId} AND session_id = ${sessionId}
       RETURNING *
@@ -549,6 +596,150 @@ router.post('/:id/traffic', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Add traffic error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Fix participant-operator links for existing participants
+router.post('/:id/fix-participant-links', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sessionId = parseInt(id);
+    
+    if (!sessionId || isNaN(sessionId)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+    
+    // Get all participants in this session that don't have operator_id set
+    const unlinkedParticipants = await db.sql`
+      SELECT id, call_sign 
+      FROM session_participants 
+      WHERE session_id = ${sessionId} AND operator_id IS NULL
+    `;
+    
+    let linkedCount = 0;
+    let notFoundCount = 0;
+    const results = [];
+    
+    for (const participant of unlinkedParticipants) {
+      // Try to find matching operator
+      const matchingOperator = await db.sql`
+        SELECT id, name, city, state 
+        FROM operators 
+        WHERE call_sign = ${participant.call_sign.toUpperCase()}
+      `;
+      
+      if (matchingOperator.length > 0) {
+        // Link the participant to the operator
+        await db.sql`
+          UPDATE session_participants 
+          SET operator_id = ${matchingOperator[0].id}
+          WHERE id = ${participant.id}
+        `;
+        
+        linkedCount++;
+        results.push({
+          participant_id: participant.id,
+          call_sign: participant.call_sign,
+          operator_id: matchingOperator[0].id,
+          operator_name: matchingOperator[0].name,
+          status: 'linked'
+        });
+      } else {
+        notFoundCount++;
+        results.push({
+          participant_id: participant.id,
+          call_sign: participant.call_sign,
+          status: 'no_operator_found'
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      session_id: sessionId,
+      total_participants: unlinkedParticipants.length,
+      linked: linkedCount,
+      not_found: notFoundCount,
+      results
+    });
+    
+  } catch (error) {
+    console.error('Fix participant links error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Fix traffic counts endpoint
+router.post('/fix-traffic-counts', async (req, res) => {
+  try {
+    console.log('🔍 Checking traffic count discrepancies...');
+    
+    // Get all sessions with their stored total_traffic and actual count
+    const sessions = await db.sql`
+      SELECT 
+        s.id,
+        s.session_date,
+        s.net_control_call,
+        s.total_traffic as stored_count,
+        COUNT(st.id) as actual_count
+      FROM sessions s
+      LEFT JOIN session_traffic st ON s.id = st.session_id
+      GROUP BY s.id, s.session_date, s.net_control_call, s.total_traffic
+      HAVING s.total_traffic != COUNT(st.id)
+      ORDER BY s.session_date DESC
+    `;
+    
+    if (sessions.length === 0) {
+      return res.json({
+        success: true,
+        message: 'All traffic counts are correct!',
+        fixed: 0,
+        sessions: []
+      });
+    }
+    
+    console.log(`❌ Found ${sessions.length} sessions with incorrect traffic counts`);
+    
+    const fixedSessions = [];
+    
+    // Fix each session
+    for (const session of sessions) {
+      await db.sql`
+        UPDATE sessions 
+        SET total_traffic = (
+          SELECT COUNT(*) FROM session_traffic WHERE session_id = ${session.id}
+        ),
+        updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${session.id}
+      `;
+      
+      fixedSessions.push({
+        id: session.id,
+        date: session.session_date,
+        net_control: session.net_control_call,
+        old_count: parseInt(session.stored_count),
+        new_count: parseInt(session.actual_count)
+      });
+      
+      console.log(`✅ Fixed session ${session.id}: ${session.stored_count} → ${session.actual_count}`);
+    }
+    
+    console.log('🎉 All traffic counts have been corrected!');
+    
+    res.json({
+      success: true,
+      message: `Fixed ${sessions.length} sessions with incorrect traffic counts`,
+      fixed: sessions.length,
+      sessions: fixedSessions
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fixing traffic counts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fix traffic counts',
+      details: error.message
+    });
   }
 });
 

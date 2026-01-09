@@ -31,8 +31,8 @@ export const AuthProvider = ({ children }) => {
     const checkAuth = async () => {
       if (token) {
         try {
-          const response = await axios.get('/api/auth/profile');
-          setUser(response.data.user);
+          const response = await axios.get('/api/auth/me');
+          setUser(response.data);
         } catch (error) {
           // Token is invalid, remove it
           localStorage.removeItem('netcontrol_token');

@@ -17,8 +17,9 @@ docs/
 node_modules/
 client/node_modules/
 
-# Build artifacts that will be rebuilt
-client/build/
+# Development source files (keep build/)
+client/src/
+client/public/
 
 # Development and testing
 *.test.js
@@ -53,9 +54,10 @@ server/data/*.db-*
 server/uploads/
 server/downloads/
 
-# Deployment packages
+# Deployment packages and old versions
 *.tar.gz
 netcontrol-*/
+.elasticbeanstalk/app_versions/
 
 # Local development scripts
 troubleshoot-installation.sh

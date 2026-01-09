@@ -47,15 +47,17 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // API Routes FIRST - before static files
+console.log('Registering API routes...');
 app.use('/api/auth', authRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/operators', operatorsRoutes);
 app.use('/api/sessions', sessionsRoutes);
 app.use('/api/reports', reportsRoutes);
-app.use('/api/fcc', fccRoutes);
+app.use('/api/fcc', fccRoutes); // FCC routes now include scheduling
 app.use('/api/qrz', qrzRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/pre-checkin', preCheckInRoutes);
+console.log('All API routes registered');
 
 // Version endpoint
 app.get('/api/version', (req, res) => {
@@ -71,7 +73,7 @@ app.get('/api/version', (req, res) => {
     } else {
       res.json({
         version: '1.1.0',
-        buildNumber: 'client-fix',
+        buildNumber: 'simple-static',
         buildDate: new Date().toISOString(),
         database: 'PostgreSQL (postgres.js)'
       });
@@ -80,7 +82,7 @@ app.get('/api/version', (req, res) => {
     console.error('Error reading version:', error);
     res.json({
       version: '1.1.0',
-      buildNumber: 'client-fix',
+      buildNumber: 'simple-static',
       buildDate: new Date().toISOString(),
       database: 'PostgreSQL (postgres.js)'
     });
@@ -146,12 +148,6 @@ app.get('*', (req, res) => {
       exists: fs.existsSync(indexPath)
     });
   }
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 8080;
