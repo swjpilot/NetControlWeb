@@ -9,9 +9,11 @@ const { Client } = require('pg');
 // Initialize AWS services
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 const lambda = new AWS.Lambda();
+const s3 = new AWS.S3();
 
-// Progress tracking table
+// Progress tracking table and S3 bucket
 const PROGRESS_TABLE = 'fcc-download-progress';
+const S3_BUCKET = 'netcontrol-fcc-temp-storage';
 
 // Processing limits - optimized for chunked processing
 const MAX_PROCESSING_TIME = 12 * 60 * 1000; // 12 minutes (leave 3 minutes buffer)
@@ -44,6 +46,77 @@ async function getDbConnection() {
   return dbClient;
 }
 
+async function uploadToS3(filePath, s3Key) {
+  try {
+    const fileStream = fs.createReadStream(filePath);
+    const uploadParams = {
+      Bucket: S3_BUCKET,
+      Key: s3Key,
+      Body: fileStream
+    };
+    
+    const result = await s3.upload(uploadParams).promise();
+    console.log(`File uploaded to S3: ${result.Location}`);
+    return result.Location;
+  } catch (error) {
+    console.error('Error uploading to S3:', error);
+    throw error;
+  }
+}
+
+async function downloadFromS3(s3Key, localPath) {
+  try {
+    const downloadParams = {
+      Bucket: S3_BUCKET,
+      Key: s3Key
+    };
+    
+    const s3Stream = s3.getObject(downloadParams).createReadStream();
+    const writeStream = fs.createWriteStream(localPath);
+    
+    return new Promise((resolve, reject) => {
+      s3Stream.pipe(writeStream);
+      writeStream.on('finish', () => {
+        console.log(`File downloaded from S3: ${s3Key} -> ${localPath}`);
+        resolve();
+      });
+      writeStream.on('error', reject);
+      s3Stream.on('error', reject);
+    });
+  } catch (error) {
+    console.error('Error downloading from S3:', error);
+    throw error;
+  }
+}
+
+async function checkS3FileExists(s3Key) {
+  try {
+    await s3.headObject({
+      Bucket: S3_BUCKET,
+      Key: s3Key
+    }).promise();
+    return true;
+  } catch (error) {
+    if (error.code === 'NotFound') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function deleteS3File(s3Key) {
+  try {
+    await s3.deleteObject({
+      Bucket: S3_BUCKET,
+      Key: s3Key
+    }).promise();
+    console.log(`File deleted from S3: ${s3Key}`);
+  } catch (error) {
+    console.error('Error deleting from S3:', error);
+    // Don't throw error for cleanup operations
+  }
+}
+
 async function updateProgress(jobId, status, progress, message, processedRecords = 0, totalRecords = 0, resumeData = null) {
   const params = {
     TableName: PROGRESS_TABLE,
@@ -72,19 +145,6 @@ async function updateProgress(jobId, status, progress, message, processedRecords
     console.log(`Progress updated: ${status} - ${progress}% - ${message}`);
   } catch (error) {
     console.error('Error updating progress:', error);
-  }
-}
-
-async function getProgress(jobId) {
-  try {
-    const result = await dynamodb.get({
-      TableName: PROGRESS_TABLE,
-      Key: { jobId }
-    }).promise();
-    return result.Item;
-  } catch (error) {
-    console.error('Error getting progress:', error);
-    return null;
   }
 }
 
@@ -180,14 +240,29 @@ async function createFCCTables(db) {
 async function insertAmateurBatch(db, batch) {
   if (batch.length === 0) return;
   
+  // Deduplicate records within the batch by call_sign (keep the last occurrence)
+  const deduplicatedBatch = [];
+  const seenCallSigns = new Set();
+  
+  // Process in reverse order to keep the last occurrence of each call sign
+  for (let i = batch.length - 1; i >= 0; i--) {
+    const record = batch[i];
+    if (!seenCallSigns.has(record.call_sign)) {
+      seenCallSigns.add(record.call_sign);
+      deduplicatedBatch.unshift(record); // Add to beginning to maintain original order
+    }
+  }
+  
+  if (deduplicatedBatch.length === 0) return;
+  
   try {
     // Use batch insert with ON CONFLICT for better performance
-    const values = batch.map((record, index) => {
+    const values = deduplicatedBatch.map((record, index) => {
       const baseIndex = index * 14;
       return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8}, $${baseIndex + 9}, $${baseIndex + 10}, $${baseIndex + 11}, $${baseIndex + 12}, $${baseIndex + 13}, $${baseIndex + 14})`;
     }).join(', ');
     
-    const params = batch.flatMap(record => [
+    const params = deduplicatedBatch.flatMap(record => [
       record.call_sign, record.operator_class, record.group_code, record.region_code,
       record.trustee_call_sign, record.trustee_indicator, record.physician_certification,
       record.ve_signature, record.systematic_call_sign_change, record.vanity_call_sign_change,
@@ -207,10 +282,14 @@ async function insertAmateurBatch(db, batch) {
         updated_at = CURRENT_TIMESTAMP
     `, params);
     
+    if (batch.length !== deduplicatedBatch.length) {
+      console.log(`Processed amateur batch: ${batch.length} records (${deduplicatedBatch.length} unique)`);
+    }
+    
   } catch (error) {
     console.error('Error in amateur batch processing:', error.message);
     // Fall back to individual inserts
-    for (const record of batch) {
+    for (const record of deduplicatedBatch) {
       try {
         await db.query(`
           INSERT INTO fcc_amateur_records (
@@ -237,14 +316,30 @@ async function insertAmateurBatch(db, batch) {
 async function insertEntityBatch(db, batch) {
   if (batch.length === 0) return;
   
+  // Deduplicate records within the batch by unique key (call_sign, licensee_id, entity_type)
+  const deduplicatedBatch = [];
+  const seenKeys = new Set();
+  
+  // Process in reverse order to keep the last occurrence of each unique combination
+  for (let i = batch.length - 1; i >= 0; i--) {
+    const record = batch[i];
+    const uniqueKey = `${record.call_sign}|${record.licensee_id}|${record.entity_type}`;
+    if (!seenKeys.has(uniqueKey)) {
+      seenKeys.add(uniqueKey);
+      deduplicatedBatch.unshift(record); // Add to beginning to maintain original order
+    }
+  }
+  
+  if (deduplicatedBatch.length === 0) return;
+  
   try {
     // Use batch insert for entity records
-    const values = batch.map((record, index) => {
+    const values = deduplicatedBatch.map((record, index) => {
       const baseIndex = index * 23;
-      return `(${Array.from({length: 23}, (_, i) => baseIndex + i + 1).join(', ')})`;
+      return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8}, $${baseIndex + 9}, $${baseIndex + 10}, $${baseIndex + 11}, $${baseIndex + 12}, $${baseIndex + 13}, $${baseIndex + 14}, $${baseIndex + 15}, $${baseIndex + 16}, $${baseIndex + 17}, $${baseIndex + 18}, $${baseIndex + 19}, $${baseIndex + 20}, $${baseIndex + 21}, $${baseIndex + 22}, $${baseIndex + 23})`;
     }).join(', ');
     
-    const params = batch.flatMap(record => [
+    const params = deduplicatedBatch.flatMap(record => [
       record.call_sign, record.entity_type, record.licensee_id, record.entity_name,
       record.first_name, record.mi, record.last_name, record.suffix,
       record.phone, record.fax, record.email, record.street_address,
@@ -271,10 +366,14 @@ async function insertEntityBatch(db, batch) {
         updated_at = CURRENT_TIMESTAMP
     `, params);
     
+    if (batch.length !== deduplicatedBatch.length) {
+      console.log(`Processed entity batch: ${batch.length} records (${deduplicatedBatch.length} unique)`);
+    }
+    
   } catch (error) {
     console.error('Error in entity batch processing:', error.message);
     // Fall back to individual inserts
-    for (const record of batch) {
+    for (const record of deduplicatedBatch) {
       try {
         await db.query(`
           INSERT INTO fcc_entity_records (
@@ -611,9 +710,55 @@ exports.handler = async (event) => {
       // Initial invocation - download and setup
       await updateProgress(jobId, 'starting', 0, 'Starting FCC database download...');
       
-      // Clear existing data
-      await db.query('DELETE FROM fcc_amateur_records');
-      await db.query('DELETE FROM fcc_entity_records');
+      // Check if another download is in progress
+      try {
+        const result = await dynamodb.scan({
+          TableName: PROGRESS_TABLE,
+          FilterExpression: '#status = :status',
+          ExpressionAttributeNames: {
+            '#status': 'status'
+          },
+          ExpressionAttributeValues: {
+            ':status': 'processing'
+          }
+        }).promise();
+        
+        if (result.Items && result.Items.length > 0) {
+          // Check if any processing job is recent (within last hour)
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          const recentProcessing = result.Items.find(item => 
+            item.updatedAt > oneHourAgo && item.jobId !== jobId
+          );
+          
+          if (recentProcessing) {
+            console.log('Another FCC download is already in progress, aborting...');
+            await updateProgress(jobId, 'error', 0, 'Another FCC download is already in progress');
+            return {
+              statusCode: 409,
+              body: JSON.stringify({ 
+                error: 'Another FCC download is already in progress',
+                activeJobId: recentProcessing.jobId
+              })
+            };
+          }
+        }
+      } catch (checkError) {
+        console.error('Error checking for active downloads:', checkError);
+        // Continue anyway if we can't check
+      }
+      
+      // Clear existing data with proper transaction handling
+      try {
+        await db.query('BEGIN');
+        await db.query('DELETE FROM fcc_amateur_records');
+        await db.query('DELETE FROM fcc_entity_records');
+        await db.query('COMMIT');
+        console.log('Successfully cleared existing FCC data');
+      } catch (deleteError) {
+        await db.query('ROLLBACK');
+        console.error('Error clearing existing data:', deleteError);
+        throw deleteError;
+      }
       
       await createFCCTables(db);
       
@@ -623,6 +768,7 @@ exports.handler = async (event) => {
       const downloadUrl = 'https://data.fcc.gov/download/pub/uls/complete/l_amat.zip';
       const zipPath = '/tmp/fcc_amateur.zip';
       const extractPath = '/tmp/fcc_data';
+      const s3KeyPrefix = `fcc-data/${jobId}`;
       
       // Download file
       const response = await axios({
@@ -651,23 +797,85 @@ exports.handler = async (event) => {
         .pipe(unzipper.Extract({ path: extractPath }))
         .promise();
       
-      // Clean up ZIP file
+      // Upload extracted files to S3
+      await updateProgress(jobId, 'uploading', 35, 'Uploading extracted files to S3...');
+      
+      const amateurFile = path.join(extractPath, 'AM.dat');
+      const entityFile = path.join(extractPath, 'EN.dat');
+      
+      if (fs.existsSync(amateurFile)) {
+        await uploadToS3(amateurFile, `${s3KeyPrefix}/AM.dat`);
+      }
+      
+      if (fs.existsSync(entityFile)) {
+        await uploadToS3(entityFile, `${s3KeyPrefix}/EN.dat`);
+      }
+      
+      // Clean up local files
       fs.unlinkSync(zipPath);
+      if (fs.existsSync(extractPath)) {
+        fs.rmSync(extractPath, { recursive: true, force: true });
+      }
       
       await updateProgress(jobId, 'processing', 40, 'Starting to process records...');
     }
     
-    // Process amateur records (chunked)
-    const extractPath = '/tmp/fcc_data';
-    const amateurFile = path.join(extractPath, 'AM.dat');
-    const entityFile = path.join(extractPath, 'EN.dat');
+    // Process records based on dataType
+    const s3KeyPrefix = `fcc-data/${jobId}`;
+    const localTempPath = '/tmp/fcc_processing';
+    const amateurFile = path.join(localTempPath, 'AM.dat');
+    const entityFile = path.join(localTempPath, 'EN.dat');
+    
+    // Create local temp directory
+    if (!fs.existsSync(localTempPath)) {
+      fs.mkdirSync(localTempPath, { recursive: true });
+    }
     
     let totalProcessedRecords = 0;
     
-    // Determine which phase we're in based on resumeData
-    const currentPhase = resumeData?.phase || 'amateur';
+    // Determine which phase we're in based on resumeData or dataType
+    let currentPhase = resumeData?.phase;
+    if (!currentPhase) {
+      // Initial phase based on dataType
+      if (dataType === 'AM') {
+        currentPhase = 'amateur';
+      } else if (dataType === 'EN') {
+        currentPhase = 'entity';
+      } else {
+        currentPhase = 'amateur'; // ALL starts with amateur
+      }
+    }
     
-    if (currentPhase === 'amateur' && fs.existsSync(amateurFile)) {
+    // Check if we need to re-download files for continuation
+    if (continuation) {
+      await updateProgress(jobId, 'processing', 40, 'Downloading files from S3 for continuation...');
+      
+      // Download required files from S3
+      if ((currentPhase === 'amateur' && (dataType === 'AM' || dataType === 'ALL')) || 
+          (currentPhase === 'entity' && dataType === 'ALL')) {
+        if (await checkS3FileExists(`${s3KeyPrefix}/AM.dat`)) {
+          await downloadFromS3(`${s3KeyPrefix}/AM.dat`, amateurFile);
+        }
+      }
+      
+      if ((currentPhase === 'entity' && (dataType === 'EN' || dataType === 'ALL')) ||
+          (currentPhase === 'amateur' && dataType === 'ALL')) {
+        if (await checkS3FileExists(`${s3KeyPrefix}/EN.dat`)) {
+          await downloadFromS3(`${s3KeyPrefix}/EN.dat`, entityFile);
+        }
+      }
+    } else {
+      // Initial processing - files should already be in S3, download them
+      if ((dataType === 'AM' || dataType === 'ALL') && await checkS3FileExists(`${s3KeyPrefix}/AM.dat`)) {
+        await downloadFromS3(`${s3KeyPrefix}/AM.dat`, amateurFile);
+      }
+      
+      if ((dataType === 'EN' || dataType === 'ALL') && await checkS3FileExists(`${s3KeyPrefix}/EN.dat`)) {
+        await downloadFromS3(`${s3KeyPrefix}/EN.dat`, entityFile);
+      }
+    }
+    
+    if ((currentPhase === 'amateur' && (dataType === 'AM' || dataType === 'ALL')) && fs.existsSync(amateurFile)) {
       console.log('Processing amateur records...');
       const result = await processFileChunked(db, amateurFile, jobId, resumeData);
       
@@ -684,8 +892,8 @@ exports.handler = async (event) => {
       
       totalProcessedRecords += result.processedCount;
       
-      // Move to entity processing phase
-      if (fs.existsSync(entityFile)) {
+      // Move to entity processing phase if dataType is ALL
+      if (dataType === 'ALL' && fs.existsSync(entityFile)) {
         console.log('Starting entity records processing...');
         await updateProgress(jobId, 'processing', 50, 
           `Amateur records completed (${result.processedCount.toLocaleString()}). Starting entity records...`,
@@ -705,8 +913,8 @@ exports.handler = async (event) => {
         
         totalProcessedRecords += entityResult.processedCount;
       }
-    } else if (currentPhase === 'entity' && fs.existsSync(entityFile)) {
-      console.log('Resuming entity records processing...');
+    } else if ((currentPhase === 'entity' && (dataType === 'EN' || dataType === 'ALL')) && fs.existsSync(entityFile)) {
+      console.log('Processing entity records...');
       const entityResult = await processEntityFileChunked(db, entityFile, jobId, resumeData);
       
       if (entityResult.continued) {
@@ -740,9 +948,18 @@ exports.handler = async (event) => {
       `FCC database update completed. Processed ${totalProcessedRecords.toLocaleString()} total records.`,
       totalProcessedRecords, totalProcessedRecords);
     
-    // Clean up
-    if (fs.existsSync(extractPath)) {
-      fs.rmSync(extractPath, { recursive: true, force: true });
+    // Clean up local files
+    if (fs.existsSync(localTempPath)) {
+      fs.rmSync(localTempPath, { recursive: true, force: true });
+    }
+    
+    // Clean up S3 files
+    try {
+      await deleteS3File(`${s3KeyPrefix}/AM.dat`);
+      await deleteS3File(`${s3KeyPrefix}/EN.dat`);
+    } catch (cleanupError) {
+      console.error('Error cleaning up S3 files:', cleanupError);
+      // Don't fail the entire process for cleanup errors
     }
     
     if (dbClient) {

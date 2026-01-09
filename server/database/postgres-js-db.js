@@ -209,13 +209,53 @@ class Database {
           status_code VARCHAR(10),
           status_date DATE,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(call_sign, licensee_id, entity_type)
         )
       `;
       
       // Create indexes for better search performance
       await this.sql`CREATE INDEX IF NOT EXISTS idx_fcc_amateur_call_sign ON fcc_amateur_records(call_sign)`;
       await this.sql`CREATE INDEX IF NOT EXISTS idx_fcc_entity_call_sign ON fcc_entity_records(call_sign)`;
+
+      // Migration: Add unique constraint to fcc_entity_records if it doesn't exist
+      try {
+        const existingConstraint = await this.sql`
+          SELECT constraint_name
+          FROM information_schema.constraint_column_usage ccu
+          JOIN information_schema.table_constraints tc ON ccu.constraint_name = tc.constraint_name
+          WHERE tc.table_name = 'fcc_entity_records' 
+          AND tc.constraint_type = 'UNIQUE'
+          AND ccu.column_name IN ('call_sign', 'licensee_id', 'entity_type')
+          GROUP BY constraint_name
+          HAVING COUNT(*) = 3
+        `;
+        
+        if (existingConstraint.length === 0) {
+          console.log('Migration: Adding missing unique constraint to fcc_entity_records...');
+          
+          // Clean up any duplicates first
+          await this.sql`
+            DELETE FROM fcc_entity_records 
+            WHERE id NOT IN (
+              SELECT MAX(id)
+              FROM fcc_entity_records
+              GROUP BY call_sign, licensee_id, entity_type
+            )
+          `;
+          
+          // Add the constraint
+          await this.sql`
+            ALTER TABLE fcc_entity_records 
+            ADD CONSTRAINT fcc_entity_records_unique_key 
+            UNIQUE (call_sign, licensee_id, entity_type)
+          `;
+          
+          console.log('Migration: Successfully added unique constraint to fcc_entity_records');
+        }
+      } catch (migrationError) {
+        console.log('Migration: Unique constraint migration failed (may already exist):', migrationError.message);
+      }
 
       // Check if default admin user exists
       const userCount = await this.sql`SELECT COUNT(*) as count FROM users`;
