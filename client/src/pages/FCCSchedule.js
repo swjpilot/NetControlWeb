@@ -171,10 +171,12 @@ const FCCScheduleWorking = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="container-fluid d-flex align-items-center justify-content-center" style={{ minHeight: '100vh' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading schedule settings...</p>
+          <div className="spinner-border text-primary mb-3" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="text-muted">Loading schedule settings...</p>
         </div>
       </div>
     );
@@ -182,14 +184,14 @@ const FCCScheduleWorking = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="container-fluid d-flex align-items-center justify-content-center" style={{ minHeight: '100vh' }}>
         <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Scheduler</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <AlertCircle size={48} className="text-danger mb-3" />
+          <h2 className="h4 mb-3">Error Loading Scheduler</h2>
+          <p className="text-muted mb-4">{error}</p>
           <button 
             onClick={() => window.location.reload()} 
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="btn btn-primary"
           >
             Retry
           </button>
@@ -199,142 +201,136 @@ const FCCScheduleWorking = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="container-fluid py-4">
+      <div className="container">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Calendar className="h-8 w-8 text-blue-600 mr-3" />
-            <h1 className="text-3xl font-bold text-gray-900">FCC Database Scheduler</h1>
+        <div className="text-center mb-5">
+          <div className="d-flex align-items-center justify-content-center mb-3">
+            <Calendar size={32} className="text-primary me-3" />
+            <h1 className="display-5 mb-0">FCC Database Scheduler</h1>
           </div>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+          <p className="lead text-muted">
             Automate FCC database updates to keep your amateur radio data current. 
             Configure when and what data to download automatically.
           </p>
         </div>
 
         {/* Status Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+        <div className="card mb-4">
+          <div className="card-header">
+            <h2 className="card-title d-flex align-items-center mb-0">
               {status.enabled ? (
-                <Power className="h-5 w-5 text-green-500 mr-2" />
+                <Power size={20} className="text-success me-2" />
               ) : (
-                <PowerOff className="h-5 w-5 text-gray-400 mr-2" />
+                <PowerOff size={20} className="text-muted me-2" />
               )}
               Current Status
             </h2>
           </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                  status.enabled 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-gray-100 text-gray-800'
-                }`}>
+          <div className="card-body">
+            <div className="row g-4">
+              <div className="col-md-4 text-center">
+                <span className={`badge ${status.enabled ? 'bg-success' : 'bg-secondary'} fs-6 mb-2`}>
                   {status.enabled ? 'Active' : 'Inactive'}
-                </div>
-                <p className="text-sm text-gray-500 mt-2">Schedule Status</p>
+                </span>
+                <p className="text-muted small mb-0">Schedule Status</p>
               </div>
-              <div className="text-center">
-                <p className="text-lg font-semibold text-gray-900">
+              <div className="col-md-4 text-center">
+                <p className="h5 mb-1">
                   {status.lastUpdated ? new Date(status.lastUpdated).toLocaleDateString() : 'Never'}
                 </p>
-                <p className="text-sm text-gray-500 mt-1">Last Updated</p>
+                <p className="text-muted small mb-0">Last Updated</p>
               </div>
-              <div className="text-center">
-                <p className="text-lg font-semibold text-gray-900">
+              <div className="col-md-4 text-center">
+                <p className="h5 mb-1">
                   {status.enabled ? formatNextRunTime(status.nextRunTime) : 'Not scheduled'}
                 </p>
-                <p className="text-sm text-gray-500 mt-1">Next Run</p>
+                <p className="text-muted small mb-0">Next Run</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Configuration Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-              <Settings className="h-5 w-5 text-blue-600 mr-2" />
+        <div className="card mb-4">
+          <div className="card-header">
+            <h2 className="card-title d-flex align-items-center mb-0">
+              <Settings size={20} className="text-primary me-2" />
               Schedule Configuration
             </h2>
           </div>
-          <div className="p-6 space-y-8">
+          <div className="card-body">
             {/* Enable/Disable Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="d-flex align-items-center justify-content-between p-3 bg-light rounded mb-4">
               <div>
-                <h3 className="text-lg font-medium text-gray-900">Automatic Updates</h3>
-                <p className="text-sm text-gray-600">Enable scheduled FCC database downloads</p>
+                <h3 className="h5 mb-1">Automatic Updates</h3>
+                <p className="text-muted small mb-0">Enable scheduled FCC database downloads</p>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
+              <div className="form-check form-switch">
                 <input
+                  className="form-check-input"
                   type="checkbox"
+                  id="enableSchedule"
                   checked={settings.enabled}
                   onChange={(e) => setSettings(prev => ({ ...prev, enabled: e.target.checked }))}
-                  className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+                <label className="form-check-label" htmlFor="enableSchedule"></label>
+              </div>
             </div>
 
             {settings.enabled && (
               <>
                 {/* Days of Week */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Days of Week
-                  </label>
-                  <div className="grid grid-cols-7 gap-2">
+                <div className="mb-4">
+                  <label className="form-label fw-semibold">Days of Week</label>
+                  <div className="row g-2">
                     {daysOfWeek.map(day => (
-                      <button
-                        key={day.value}
-                        type="button"
-                        onClick={() => handleDayToggle(day.value)}
-                        className={`px-3 py-3 text-sm font-medium rounded-lg border transition-colors ${
-                          settings.days_of_week.split(',').includes(day.value)
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="text-center">
-                          <div className="font-semibold">{day.label}</div>
-                        </div>
-                      </button>
+                      <div key={day.value} className="col">
+                        <button
+                          type="button"
+                          onClick={() => handleDayToggle(day.value)}
+                          className={`btn w-100 ${
+                            settings.days_of_week.split(',').includes(day.value)
+                              ? 'btn-primary'
+                              : 'btn-outline-secondary'
+                          }`}
+                        >
+                          <div className="text-center">
+                            <div className="fw-semibold">{day.label}</div>
+                          </div>
+                        </button>
+                      </div>
                     ))}
                   </div>
-                  <p className="text-sm text-gray-500 mt-2">
+                  <div className="form-text">
                     Selected: {getSelectedDaysText()}
-                  </p>
+                  </div>
                 </div>
 
                 {/* Time and Data Type */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Clock className="h-4 w-4 inline mr-1" />
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">
+                      <Clock size={16} className="me-1" />
                       Time (UTC)
                     </label>
                     <input
                       type="time"
+                      className="form-control"
                       value={settings.time_utc}
                       onChange={(e) => setSettings(prev => ({ ...prev, time_utc: e.target.value }))}
-                      className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
-                    <p className="text-sm text-gray-500 mt-1">
+                    <div className="form-text">
                       Current UTC: {new Date().toUTCString().split(' ')[4]}
-                    </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Data Type
-                    </label>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Data Type</label>
                     <select
+                      className="form-select"
                       value={settings.data_type}
                       onChange={(e) => setSettings(prev => ({ ...prev, data_type: e.target.value }))}
-                      className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     >
                       {dataTypes.map(type => (
                         <option key={type.value} value={type.value}>
@@ -350,66 +346,69 @@ const FCCScheduleWorking = () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
-          <button
-            onClick={saveSettings}
-            disabled={saving}
-            className="flex-1 flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Settings className="h-5 w-5 mr-2" />
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
-
-          <button
-            onClick={testSchedule}
-            disabled={testing}
-            className="flex-1 flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Play className="h-5 w-5 mr-2" />
-            {testing ? 'Testing...' : 'Test Now'}
-          </button>
+        <div className="row g-3 mb-4">
+          <div className="col-sm-6">
+            <button
+              onClick={saveSettings}
+              disabled={saving}
+              className="btn btn-primary w-100 d-flex align-items-center justify-content-center"
+            >
+              <Settings size={20} className="me-2" />
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+          <div className="col-sm-6">
+            <button
+              onClick={testSchedule}
+              disabled={testing}
+              className="btn btn-success w-100 d-flex align-items-center justify-content-center"
+            >
+              <Play size={20} className="me-2" />
+              {testing ? 'Testing...' : 'Test Now'}
+            </button>
+          </div>
         </div>
 
         {/* Message */}
         {message && (
-          <div className={`rounded-lg p-4 mb-8 ${
-            message.includes('Error') 
-              ? 'bg-red-50 text-red-700 border border-red-200' 
-              : 'bg-green-50 text-green-700 border border-green-200'
-          }`}>
-            <div className="flex items-center">
-              {message.includes('Error') ? (
-                <AlertCircle className="h-5 w-5 mr-2" />
-              ) : (
-                <CheckCircle className="h-5 w-5 mr-2" />
-              )}
-              {message}
-            </div>
+          <div className={`alert ${
+            message.includes('Error') ? 'alert-danger' : 'alert-success'
+          } d-flex align-items-center mb-4`}>
+            {message.includes('Error') ? (
+              <AlertCircle size={20} className="me-2" />
+            ) : (
+              <CheckCircle size={20} className="me-2" />
+            )}
+            {message}
           </div>
         )}
 
         {/* Help Section */}
-        <div className="bg-blue-50 rounded-xl border border-blue-200 p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-4 flex items-center">
-            <Info className="h-5 w-5 mr-2" />
-            How It Works
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-blue-800">
-            <div>
-              <h4 className="font-semibold mb-2">Automatic Updates</h4>
-              <ul className="space-y-1">
-                <li>• Downloads happen in the background using AWS Lambda</li>
-                <li>• Existing records are replaced with fresh FCC data</li>
-                <li>• Progress can be monitored in the FCC Database page</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-2">Configuration Tips</h4>
-              <ul className="space-y-1">
-                <li>• Choose off-peak hours to minimize impact</li>
-                <li>• "All Records" provides complete data coverage</li>
-                <li>• Use "Test Now" to verify your setup works</li>
-              </ul>
+        <div className="card border-primary">
+          <div className="card-header bg-primary bg-opacity-10">
+            <h3 className="card-title d-flex align-items-center text-primary mb-0">
+              <Info size={20} className="me-2" />
+              How It Works
+            </h3>
+          </div>
+          <div className="card-body">
+            <div className="row g-4">
+              <div className="col-md-6">
+                <h4 className="h6 fw-semibold mb-2">Automatic Updates</h4>
+                <ul className="list-unstyled small">
+                  <li className="mb-1">• Downloads happen in the background using AWS Lambda</li>
+                  <li className="mb-1">• Existing records are replaced with fresh FCC data</li>
+                  <li className="mb-1">• Progress can be monitored in the FCC Database page</li>
+                </ul>
+              </div>
+              <div className="col-md-6">
+                <h4 className="h6 fw-semibold mb-2">Configuration Tips</h4>
+                <ul className="list-unstyled small">
+                  <li className="mb-1">• Choose off-peak hours to minimize impact</li>
+                  <li className="mb-1">• "All Records" provides complete data coverage</li>
+                  <li className="mb-1">• Use "Test Now" to verify your setup works</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
