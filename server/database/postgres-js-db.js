@@ -32,6 +32,7 @@ class Database {
           role VARCHAR(50) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
           call_sign VARCHAR(20),
           name VARCHAR(255),
+          phone_number VARCHAR(20),
           active BOOLEAN DEFAULT true,
           created_by INTEGER REFERENCES users(id),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -181,6 +182,73 @@ class Database {
         )
       `;
       
+      // Net schedules table - recurring schedule templates
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS net_schedules (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          frequency VARCHAR(20),
+          mode VARCHAR(20) DEFAULT 'FM',
+          net_type VARCHAR(50) DEFAULT 'Regular',
+          start_time TIME NOT NULL,
+          duration_minutes INTEGER DEFAULT 60,
+          recurrence_type VARCHAR(20) NOT NULL CHECK (recurrence_type IN ('daily', 'weekly', 'biweekly', 'monthly')),
+          days_of_week VARCHAR(50),
+          start_date DATE NOT NULL,
+          end_date DATE,
+          active BOOLEAN DEFAULT true,
+          created_by INTEGER REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      // Migration: Add monthly ordinal scheduling columns
+      try {
+        await this.sql`ALTER TABLE net_schedules ADD COLUMN IF NOT EXISTS monthly_ordinal INTEGER`;
+        await this.sql`ALTER TABLE net_schedules ADD COLUMN IF NOT EXISTS monthly_weekday INTEGER`;
+        console.log('Migration: Added monthly_ordinal and monthly_weekday columns to net_schedules table');
+      } catch (error) {
+        console.log('Migration note (monthly ordinal columns):', error.message);
+      }
+
+      // Net schedule assignments - who is assigned to run each scheduled net
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS net_schedule_assignments (
+          id SERIAL PRIMARY KEY,
+          schedule_id INTEGER NOT NULL REFERENCES net_schedules(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          call_sign VARCHAR(20) NOT NULL,
+          name VARCHAR(255),
+          assignment_order INTEGER DEFAULT 1,
+          active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(schedule_id, user_id)
+        )
+      `;
+
+      // Net schedule exceptions - override specific dates in a recurring schedule
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS net_schedule_exceptions (
+          id SERIAL PRIMARY KEY,
+          schedule_id INTEGER NOT NULL REFERENCES net_schedules(id) ON DELETE CASCADE,
+          exception_date DATE NOT NULL,
+          exception_type VARCHAR(20) NOT NULL CHECK (exception_type IN ('cancelled', 'reassigned', 'time_change')),
+          assigned_user_id INTEGER REFERENCES users(id),
+          assigned_call_sign VARCHAR(20),
+          assigned_name VARCHAR(255),
+          new_start_time TIME,
+          new_duration_minutes INTEGER,
+          reason TEXT,
+          created_by INTEGER REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(schedule_id, exception_date)
+        )
+      `;
+
       // FCC entity records table
       await this.sql`
         CREATE TABLE IF NOT EXISTS fcc_entity_records (
@@ -301,7 +369,8 @@ class Database {
         
         // Pre-check-in settings
         ['precheckin_url', 'https://brars.hamsunite.org/api/pre-checkin', 'BRARS Pre-check-in API URL'],
-        ['netreport_url', 'https://brars.hamsunite.org/api/net-report', 'Net Report submission URL'],
+        ['netreport_url', 'https://brars.hamsunite.org/cgi-bin/netReport', 'Net Report submission URL'],
+        ['net_script_template', '', 'Net script template with variable placeholders'],
         
         // UI settings
         ['theme', 'light', 'UI theme (light, dark, auto)'],

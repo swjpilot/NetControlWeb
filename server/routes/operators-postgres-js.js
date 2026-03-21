@@ -6,7 +6,18 @@ const { authenticateToken } = require('./auth-postgres-js');
 // Get all operators (with authentication)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { search, class: licenseClass, limit = 25, offset = 0 } = req.query;
+    const { search, class: licenseClass, limit = 25, offset = 0, sort = 'call_sign', order = 'asc' } = req.query;
+    
+    // Validate sort field to prevent SQL injection
+    const allowedSortFields = {
+      'call_sign': 'call_sign',
+      'name': 'name',
+      'location': 'city',
+      'class': 'license_class',
+      'updated_at': 'updated_at'
+    };
+    const sortField = allowedSortFields[sort] || 'call_sign';
+    const sortOrder = order === 'desc' ? 'DESC' : 'ASC';
     
     let whereConditions = [];
     let searchParams = [];
@@ -53,7 +64,7 @@ router.get('/', authenticateToken, async (req, res) => {
              created_at, updated_at
       FROM operators 
       ${whereClause}
-      ORDER BY call_sign ASC
+      ORDER BY ${sortField} ${sortOrder}
       LIMIT $${searchParams.length + 1} OFFSET $${searchParams.length + 2}
     `;
     searchParams.push(parseInt(limit), parseInt(offset));

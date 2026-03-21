@@ -18,7 +18,7 @@ router.post('/login', async (req, res) => {
     
     // Find user
     const result = await db.sql`
-      SELECT id, username, password_hash, email, role, call_sign, name, active 
+      SELECT id, username, password_hash, email, role, call_sign, name, active, force_password_change 
       FROM users 
       WHERE username = ${username}
     `;
@@ -67,7 +67,8 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         callSign: user.call_sign,
-        name: user.name
+        name: user.name,
+        forcePasswordChange: user.force_password_change || false
       }
     });
     
@@ -382,6 +383,62 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
+
+// Change password (for forced password change or user-initiated)
+router.post('/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+    
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    
+    // Get user with current password
+    const result = await db.sql`
+      SELECT id, password_hash, force_password_change
+      FROM users 
+      WHERE id = ${req.user.userId}
+    `;
+    
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = result[0];
+    
+    // Verify current password
+    const isValidPassword = await bcrypt.compare(currentPassword, user.password_hash);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+    
+    // Update password and clear force_password_change flag
+    await db.sql`
+      UPDATE users 
+      SET password_hash = ${newPasswordHash},
+          force_password_change = FALSE,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${req.user.userId}
+    `;
+    
+    res.json({ 
+      success: true,
+      message: 'Password changed successfully' 
+    });
+    
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 module.exports = router;
 module.exports.authenticateToken = authenticateToken;

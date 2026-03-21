@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const db = require('./database/postgres-js-db');
+const { runMigrations } = require('./database/migrate');
 const authRoutes = require('./routes/auth-postgres-js');
 const settingsRoutes = require('./routes/settings-postgres-js');
 const operatorsRoutes = require('./routes/operators-postgres-js');
@@ -13,6 +14,7 @@ const fccRoutes = require('./routes/fcc-postgres-js');
 const qrzRoutes = require('./routes/qrz-postgres-js');
 const usersRoutes = require('./routes/users-postgres-js');
 const preCheckInRoutes = require('./routes/preCheckIn-postgres-js');
+const schedulesRoutes = require('./routes/schedules');
 
 const app = express();
 
@@ -21,6 +23,15 @@ const app = express();
   try {
     await db.init();
     console.log('Database initialized successfully');
+    
+    // Run any pending migrations
+    try {
+      await runMigrations();
+      console.log('Database migrations completed');
+    } catch (migrationError) {
+      console.error('Migration warning:', migrationError.message);
+      // Don't fail startup if migrations have issues
+    }
   } catch (error) {
     console.error('Database initialization failed:', error);
   }
@@ -56,6 +67,7 @@ app.use('/api/fcc', fccRoutes);
 app.use('/api/qrz', qrzRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/pre-checkin', preCheckInRoutes);
+app.use('/api/schedules', schedulesRoutes);
 
 // Version endpoint
 app.get('/api/version', (req, res) => {

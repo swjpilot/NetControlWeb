@@ -35,19 +35,22 @@ const Operators = () => {
   });
   const [mapOperator, setMapOperator] = useState(null);
   const [showMap, setShowMap] = useState(false);
+  const [operatorSort, setOperatorSort] = useState({ field: 'call_sign', direction: 'asc' });
   const queryClient = useQueryClient();
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm();
 
   // Fetch all operators
   const { data: operatorsData, isLoading } = useQuery(
-    ['operators', searchTerm, filterClass, currentPage, itemsPerPage],
+    ['operators', searchTerm, filterClass, currentPage, itemsPerPage, operatorSort],
     () => axios.get('/api/operators', {
       params: {
         search: searchTerm || undefined,
         class: filterClass || undefined,
         limit: itemsPerPage,
-        offset: (currentPage - 1) * itemsPerPage
+        offset: (currentPage - 1) * itemsPerPage,
+        sort: operatorSort.field,
+        order: operatorSort.direction
       }
     }).then(res => res.data)
   );
@@ -214,14 +217,19 @@ const Operators = () => {
   };
 
   const handleShowMap = (operator) => {
-    // Check if operator has address information
     if (!operator.street && !operator.location) {
       toast.error('No address information available for this operator');
       return;
     }
     
-    setMapOperator(operator);
-    setShowMap(true);
+    // Toggle: if same operator clicked, close the map
+    if (mapOperator && mapOperator.id === operator.id) {
+      setMapOperator(null);
+      setShowMap(false);
+    } else {
+      setMapOperator(operator);
+      setShowMap(true);
+    }
   };
 
   const handleCloseMap = () => {
@@ -237,6 +245,19 @@ const Operators = () => {
   const filteredOperators = operators || [];
 
   const licenseClasses = ['Technician', 'General', 'Amateur Extra', 'Novice', 'Advanced'];
+
+  const handleOperatorSort = (field) => {
+    setOperatorSort(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+    setCurrentPage(1);
+  };
+
+  const SortIndicator = ({ field }) => {
+    if (operatorSort.field !== field) return <span className="text-muted ms-1" style={{ opacity: 0.3 }}>⇅</span>;
+    return <span className="ms-1">{operatorSort.direction === 'asc' ? '▲' : '▼'}</span>;
+  };
 
   return (
     <div>
@@ -484,18 +505,29 @@ const Operators = () => {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Callsign</th>
-                      <th>Operator</th>
-                      <th>Location</th>
-                      <th>License</th>
+                      <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOperatorSort('call_sign')}>
+                        Callsign <SortIndicator field="call_sign" />
+                      </th>
+                      <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOperatorSort('name')}>
+                        Operator <SortIndicator field="name" />
+                      </th>
+                      <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOperatorSort('location')}>
+                        Location <SortIndicator field="location" />
+                      </th>
+                      <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOperatorSort('class')}>
+                        License <SortIndicator field="class" />
+                      </th>
                       <th>Contact</th>
-                      <th>Last Updated</th>
+                      <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOperatorSort('updated_at')}>
+                        Last Updated <SortIndicator field="updated_at" />
+                      </th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredOperators.map((operator) => (
-                      <tr key={operator.id}>
+                      <React.Fragment key={operator.id}>
+                      <tr>
                         <td>
                           <div className="d-flex align-items-center">
                             <Radio size={16} className="text-primary me-2" />
@@ -600,6 +632,19 @@ const Operators = () => {
                           </div>
                         </td>
                       </tr>
+                      {showMap && mapOperator && mapOperator.id === operator.id && (
+                        <tr>
+                          <td colSpan="7" style={{ padding: 0 }}>
+                            <OperatorMap 
+                              operator={mapOperator}
+                              isOpen={true}
+                              onClose={handleCloseMap}
+                              inline={true}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -682,12 +727,6 @@ const Operators = () => {
         </div>
       </div>
 
-      {/* Operator Map Modal */}
-      <OperatorMap 
-        operator={mapOperator}
-        isOpen={showMap}
-        onClose={handleCloseMap}
-      />
     </div>
   );
 };

@@ -12,7 +12,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-const OperatorMap = ({ operator, isOpen, onClose }) => {
+const OperatorMap = ({ operator, isOpen, onClose, inline = false }) => {
   const [coordinates, setCoordinates] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -101,6 +101,80 @@ const OperatorMap = ({ operator, isOpen, onClose }) => {
   };
 
   if (!isOpen) return null;
+
+  if (inline) {
+    return (
+      <div style={{ borderTop: '2px solid #0d6efd' }}>
+        <div className="d-flex justify-content-between align-items-center px-3 py-2" style={{ backgroundColor: 'var(--bg-secondary, #f8f9fa)' }}>
+          <div className="d-flex align-items-center">
+            <MapPin size={16} className="me-2 text-primary" />
+            <strong>{operator.call_sign}</strong>
+            <span className="text-muted ms-2 small">
+              {[operator.street, operator.location].filter(Boolean).join(', ')}
+            </span>
+          </div>
+          <div className="d-flex gap-2 align-items-center">
+            {coordinates && (
+              <>
+                <a href={getGoogleMapsUrl()} target="_blank" rel="noopener noreferrer" className="btn btn-outline-primary btn-sm py-0">
+                  <ExternalLink size={12} className="me-1" />Google
+                </a>
+                <a href={getAppleMapsUrl()} target="_blank" rel="noopener noreferrer" className="btn btn-outline-secondary btn-sm py-0">
+                  <ExternalLink size={12} className="me-1" />Apple
+                </a>
+              </>
+            )}
+            <button className="btn btn-outline-secondary btn-sm py-0" onClick={onClose}>
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+            <div className="text-center">
+              <div className="spinner-border text-primary mb-2" role="status" />
+              <p className="text-muted small mb-0">Finding location...</p>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="d-flex justify-content-center align-items-center" style={{ height: '200px' }}>
+            <div className="text-center">
+              <MapPin size={32} className="text-muted mb-2" />
+              <p className="text-muted small mb-1">{error}</p>
+              <button className="btn btn-outline-primary btn-sm" onClick={geocodeAddress}>Try Again</button>
+            </div>
+          </div>
+        )}
+
+        {coordinates && !loading && !error && (
+          <div style={{ height: '300px', width: '100%' }}>
+            <MapContainer
+              center={[coordinates.lat, coordinates.lng]}
+              zoom={15}
+              style={{ height: '100%', width: '100%' }}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <Marker position={[coordinates.lat, coordinates.lng]}>
+                <Popup>
+                  <div>
+                    <strong>{operator.call_sign}</strong>
+                    {operator.name && <div>{operator.name}</div>}
+                    <div className="small text-muted mt-1">{coordinates.displayName}</div>
+                  </div>
+                </Popup>
+              </Marker>
+            </MapContainer>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>

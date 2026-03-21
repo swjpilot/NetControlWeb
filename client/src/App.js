@@ -10,6 +10,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ChangePassword from './pages/ChangePassword';
 import Dashboard from './pages/Dashboard';
 import 'leaflet/dist/leaflet.css';
 import FCCDatabase from './pages/FCCDatabase';
@@ -21,6 +22,7 @@ import Operators from './pages/Operators';
 import Sessions from './pages/Sessions';
 import SessionDetail from './pages/SessionDetail';
 import Reports from './pages/Reports';
+import NetSchedules from './pages/NetSchedules';
 import Profile from './pages/Profile';
 import { initializeMobileUtils } from './utils/mobileUtils';
 import './App.css';
@@ -52,6 +54,11 @@ function App() {
                   <Route path="/login" element={<Login />} />
                   <Route path="/forgot-password" element={<ForgotPassword />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/change-password" element={
+                    <ProtectedRoute>
+                      <ChangePassword />
+                    </ProtectedRoute>
+                  } />
                   <Route path="/*" element={
                     <ProtectedRoute>
                       <Layout>
@@ -60,6 +67,7 @@ function App() {
                           <Route path="/profile" element={<Profile />} />
                           <Route path="/sessions" element={<Sessions />} />
                           <Route path="/sessions/:id" element={<SessionDetail />} />
+                          <Route path="/schedules" element={<NetSchedules />} />
                           <Route path="/reports" element={<Reports />} />
                           <Route path="/fcc" element={<FCCDatabase />} />
                           <Route path="/fcc/schedule" element={

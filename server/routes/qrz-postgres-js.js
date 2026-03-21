@@ -9,6 +9,20 @@ const { authenticateToken } = require('./auth-postgres-js');
 let qrzSession = null;
 let qrzSessionExpiry = null;
 
+// Map QRZ single-letter license class to full name
+function mapLicenseClass(code) {
+  if (!code) return '';
+  const map = {
+    'E': 'Extra',
+    'A': 'Advanced',
+    'G': 'General',
+    'T': 'Technician',
+    'N': 'Novice',
+    'P': 'Technician Plus'
+  };
+  return map[code.toUpperCase()] || code;
+}
+
 // Get QRZ session key
 async function getQRZSession() {
   try {
@@ -102,7 +116,7 @@ router.get('/lookup/:callsign', authenticateToken, async (req, res) => {
           zip: callsignData.zip ? callsignData.zip[0] : '',
           country: callsignData.country ? callsignData.country[0] : '',
           grid: callsignData.grid ? callsignData.grid[0] : '',
-          licenseClass: callsignData.class ? callsignData.class[0] : '',
+          licenseClass: callsignData.class ? mapLicenseClass(callsignData.class[0]) : '',
           expires: callsignData.expdate ? callsignData.expdate[0] : '',
           email: callsignData.email ? callsignData.email[0] : '',
           url: callsignData.url ? callsignData.url[0] : '',
@@ -228,3 +242,5 @@ router.post('/import/:callsign', authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.getQRZSession = getQRZSession;
+module.exports.mapLicenseClass = mapLicenseClass;

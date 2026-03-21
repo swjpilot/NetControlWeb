@@ -20,11 +20,13 @@ import {
   Search,
   X,
   MapPin,
-  Download
+  Download,
+  FileText
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { useSettings } from '../contexts/SettingsContext';
 
 const SessionDetail = () => {
   const { id } = useParams();
@@ -42,6 +44,26 @@ const SessionDetail = () => {
   const [preCheckInData, setPreCheckInData] = useState(null);
   const [selectedPreCheckIns, setSelectedPreCheckIns] = useState(new Set());
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [participantSort, setParticipantSort] = useState({ field: 'check_in_time', direction: 'asc' });
+  const [showNetScript, setShowNetScript] = useState(false);
+  const { getSetting } = useSettings();
+
+  // Fetch tomorrow's scheduled net for script variables
+  const { data: upcomingData } = useQuery(
+    'upcoming-nets-tomorrow',
+    () => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const startDate = tomorrow.toISOString().split('T')[0];
+      return axios.get('/api/schedules/calendar/upcoming', { params: { days: 1, start_date: startDate } }).then(res => res.data);
+    }
+  );
+  const [participantFlags, setParticipantFlags] = useState({
+    flag_comment: false,
+    flag_traffic: false,
+    flag_echolink: false,
+    flag_announcement: false
+  });
   const [manualEntryData, setManualEntryData] = useState({
     name: '',
     email: '',
@@ -82,6 +104,109 @@ const SessionDetail = () => {
   );
 
   const operators = useMemo(() => operatorsData || [], [operatorsData]);
+
+  // Sorted participants list
+  const sortedParticipants = useMemo(() => {
+    if (!sessionData?.participants) return [];
+    const sorted = [...sessionData.participants];
+    const { field, direction } = participantSort;
+    sorted.sort((a, b) => {
+      let valA, valB;
+      switch (field) {
+        case 'call_sign':
+          valA = (a.display_call_sign || a.call_sign || '').toLowerCase();
+          valB = (b.display_call_sign || b.call_sign || '').toLowerCase();
+          break;
+        case 'name':
+          valA = (a.display_name || a.operator_name || a.name || '').toLowerCase();
+          valB = (b.display_name || b.operator_name || b.name || '').toLowerCase();
+          break;
+        case 'location':
+          valA = (a.display_location || a.operator_location || '').toLowerCase();
+          valB = (b.display_location || b.operator_location || '').toLowerCase();
+          break;
+        case 'check_in_time':
+        default:
+          valA = a.check_in_time || '';
+          valB = b.check_in_time || '';
+          break;
+      }
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [sessionData?.participants, participantSort]);
+
+  const handleParticipantSort = (field) => {
+    setParticipantSort(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const SortIndicator = ({ field }) => {
+    if (participantSort.field !== field) return <span className="text-muted ms-1" style={{ opacity: 0.3 }}>⇅</span>;
+    return <span className="ms-1">{participantSort.direction === 'asc' ? '▲' : '▼'}</span>;
+  };
+
+  // Process net script template with session data
+  const processNetScript = () => {
+    const template = getSetting('net_script_template', '');
+    if (!template || !sessionData) return '';
+    
+    const sessionDate = new Date(sessionData.session_date);
+    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+    
+    // Look up net controller's city from operators list
+    const ncOperator = operators.find(op => 
+      op.call_sign?.toUpperCase() === (sessionData.net_control_call || '').toUpperCase()
+    );
+    
+    // Get tomorrow's scheduled net controller
+    const tomorrowNets = upcomingData?.upcoming_nets || [];
+    const tomorrowNet = tomorrowNets[0]; // First scheduled net for tomorrow
+    const tomorrowFirstName = tomorrowNet?.assigned_operator?.name ? tomorrowNet.assigned_operator.name.split(' ')[0] : '';
+    const tomorrowCallSign = tomorrowNet?.assigned_operator?.call_sign || '';
+    
+    const vars = {
+      '{FIRSTNAME}': (sessionData.net_control_name || '').split(' ')[0] || '',
+      '{FULLNAME}': sessionData.net_control_name || '',
+      '{CALLSIGN}': sessionData.net_control_call || '',
+      '{CITY}': ncOperator?.city || '',
+      '{DATE}': localDate.toLocaleDateString(),
+      '{DAY_OF_WEEK}': localDate.toLocaleDateString('en-US', { weekday: 'long' }),
+      '{STARTING_GROUP}': (() => {
+        const dayMap = {
+          0: 'Alpha – Delta',
+          1: 'Echo – Hotel',
+          2: 'India – Lima',
+          3: 'Mike – Papa',
+          4: 'Quebec – Tango',
+          5: 'Uniform – Zulu',
+          6: 'Alpha – Delta',
+        };
+        return dayMap[localDate.getDay()] || '';
+      })(),
+      '{TOMORROW_FIRSTNAME}': tomorrowFirstName,
+      '{TOMORROW_CALLSIGN}': tomorrowCallSign,
+      '{FREQUENCY}': sessionData.frequency || '',
+      '{MODE}': sessionData.mode || 'FM',
+      '{NET_TYPE}': sessionData.net_type || 'Regular',
+      '{CHECKINS}': String(sessionData.participants?.length || 0),
+      '{TRAFFIC}': String(sessionData.traffic?.length || 0),
+      '{START_TIME}': sessionData.start_time || '',
+      '{END_TIME}': sessionData.end_time || '',
+      '{POWER}': sessionData.power || '',
+      '{ANTENNA}': sessionData.antenna || '',
+    };
+    
+    let result = template;
+    Object.entries(vars).forEach(([key, value]) => {
+      result = result.replaceAll(key, value);
+    });
+    return result;
+  };
 
   // QRZ lookup mutation (defined early to avoid use-before-define issues)
   const qrzLookupMutation = useMutation(
@@ -531,6 +656,20 @@ const SessionDetail = () => {
     }
   );
 
+  // Submit net report mutation
+  const submitNetReportMutation = useMutation(
+    () => axios.post(`/api/sessions/${id}/submit-net-report`),
+    {
+      onSuccess: (response) => {
+        const data = response.data.data;
+        toast.success(`Net report submitted: ${data.callSign} - ${data.checkins} check-ins, ${data.traffic} traffic`);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to submit net report');
+      }
+    }
+  );
+
   const onSubmitParticipant = (data) => {
     console.log('Submitting participant data:', data);
     console.log('Selected operator:', selectedOperator);
@@ -539,8 +678,17 @@ const SessionDetail = () => {
     console.log('Form data call_sign:', data.call_sign);
     
     // Use selected operator call sign, form data call sign, or call sign input
-    const finalCallSign = selectedOperator?.call_sign || data.call_sign || callSignInput.trim();
+    const rawCallSign = selectedOperator?.call_sign || data.call_sign || callSignInput.trim();
+    const { callSign: finalCallSign, flags: parsedFlags } = parseCallSignFlags(rawCallSign);
     const finalOperatorId = selectedOperator?.id || data.operator_id;
+    
+    // Merge parsed flags with any flags already in data or state
+    const mergedFlags = {
+      flag_comment: data.flag_comment || participantFlags.flag_comment || parsedFlags.flag_comment,
+      flag_traffic: data.flag_traffic || participantFlags.flag_traffic || parsedFlags.flag_traffic,
+      flag_echolink: data.flag_echolink || participantFlags.flag_echolink || parsedFlags.flag_echolink,
+      flag_announcement: data.flag_announcement || participantFlags.flag_announcement || parsedFlags.flag_announcement
+    };
     
     // Validate that we have a call sign
     if (!finalCallSign) {
@@ -571,7 +719,8 @@ const SessionDetail = () => {
     const participantData = {
       ...data,
       operator_id: finalOperatorId || null,
-      call_sign: finalCallSign
+      call_sign: finalCallSign,
+      ...mergedFlags
     };
     
     console.log('Adding participant directly:', participantData);
@@ -603,6 +752,14 @@ const SessionDetail = () => {
       setSelectedOperator(null);
       setCallSignInput(participant.call_sign || '');
     }
+    
+    // Set flag state from participant data
+    setParticipantFlags({
+      flag_comment: participant.flag_comment || false,
+      flag_traffic: participant.flag_traffic || false,
+      flag_echolink: participant.flag_echolink || false,
+      flag_announcement: participant.flag_announcement || false
+    });
     
     // Set form values
     participantForm.setValue('operator_id', participant.operator_id || '');
@@ -666,8 +823,12 @@ const SessionDetail = () => {
     setSelectedOperator(null);
     setQrzLookupData(null);
     
-    // Update form value
-    participantForm.setValue('call_sign', value);
+    // Parse flags from input
+    const { callSign, flags } = parseCallSignFlags(value);
+    setParticipantFlags(flags);
+    
+    // Update form value with just the call sign (without flags)
+    participantForm.setValue('call_sign', callSign);
     participantForm.setValue('operator_id', '');
   };
 
@@ -675,7 +836,11 @@ const SessionDetail = () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       
-      const callSign = callSignInput.trim();
+      // Parse flags from input
+      const { callSign: parsedCallSign, flags } = parseCallSignFlags(callSignInput.trim());
+      setParticipantFlags(flags);
+      
+      const callSign = parsedCallSign;
       if (!callSign) {
         toast.error('Please enter a call sign');
         return;
@@ -698,7 +863,8 @@ const SessionDetail = () => {
             call_sign: existingOperator.call_sign,
             check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
             check_out_time: participantForm.getValues('check_out_time') || '',
-            notes: participantForm.getValues('notes') || ''
+            notes: participantForm.getValues('notes') || '',
+            ...flags
           };
           onSubmitParticipant(formData);
         }, 100);
@@ -710,7 +876,8 @@ const SessionDetail = () => {
           call_sign: callSign,
           check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
           check_out_time: participantForm.getValues('check_out_time') || '',
-          notes: participantForm.getValues('notes') || ''
+          notes: participantForm.getValues('notes') || '',
+          ...flags
         };
         
         // Create operator from QRZ data first
@@ -931,7 +1098,8 @@ const SessionDetail = () => {
           call_sign: newOperator.call_sign,
           check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
           check_out_time: participantForm.getValues('check_out_time') || '',
-          notes: participantForm.getValues('notes') || ''
+          notes: participantForm.getValues('notes') || '',
+          ...participantFlags
         };
         
         console.log('Adding participant with new operator ID:', participantData);
@@ -1006,6 +1174,30 @@ const SessionDetail = () => {
     return new Date().toTimeString().slice(0, 5);
   };
 
+  // Parse /flags from call sign input (e.g., "W1AW/C/T" -> callSign: "W1AW", flags)
+  const parseCallSignFlags = (input) => {
+    const flags = {
+      flag_comment: false,
+      flag_traffic: false,
+      flag_echolink: false,
+      flag_announcement: false
+    };
+    
+    // Split by / and process each part
+    const parts = input.trim().split('/');
+    const callSign = parts[0].trim();
+    
+    for (let i = 1; i < parts.length; i++) {
+      const flag = parts[i].trim().toUpperCase();
+      if (flag === 'C') flags.flag_comment = true;
+      else if (flag === 'T') flags.flag_traffic = true;
+      else if (flag === 'E') flags.flag_echolink = true;
+      else if (flag === 'A') flags.flag_announcement = true;
+    }
+    
+    return { callSign, flags };
+  };
+
   const messageTypes = ['Routine', 'Priority', 'Welfare', 'Emergency'];
   const precedences = ['Routine', 'Welfare', 'Priority', 'Emergency'];
 
@@ -1057,6 +1249,36 @@ const SessionDetail = () => {
               {sessionData.net_control_name && ` (${sessionData.net_control_name})`}
             </p>
           </div>
+        </div>
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-outline-primary"
+            onClick={() => {
+              const template = getSetting('net_script_template', '');
+              if (!template) {
+                toast.error('No net script template configured. Go to Settings → External Services to add one.');
+                return;
+              }
+              setShowNetScript(true);
+            }}
+          >
+            <FileText size={16} className="me-2" />Net Script
+          </button>
+          <button
+            className="btn btn-success"
+            onClick={() => {
+              if (window.confirm(`Submit net report for ${sessionData.net_control_call} with ${sessionData.participants?.length || 0} check-ins?`)) {
+                submitNetReportMutation.mutate();
+              }
+            }}
+            disabled={submitNetReportMutation.isLoading}
+          >
+            {submitNetReportMutation.isLoading ? (
+              <><Loader size={16} className="animate-spin me-2" />Submitting...</>
+            ) : (
+              <><Send size={16} className="me-2" />Submit Net Report</>
+            )}
+          </button>
         </div>
       </div>
 
@@ -1164,6 +1386,45 @@ const SessionDetail = () => {
         </div>
       </div>
 
+      {/* Net Script Panel */}
+      {showNetScript && (
+        <div className="card mb-4">
+          <div className="card-header d-flex justify-content-between align-items-center">
+            <h2 className="card-title mb-0">
+              <FileText size={20} className="me-2" />
+              Net Script
+            </h2>
+            <div className="d-flex gap-2">
+              <button
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(processNetScript().replace(/\[i\]/g, '').replace(/\[\/i\]/g, '').replace(/\[b\]/g, '').replace(/\[\/b\]/g, ''));
+                  toast.success('Script copied to clipboard');
+                }}
+              >
+                Copy
+              </button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowNetScript(false)}>
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="card-body">
+            <pre style={{ 
+              whiteSpace: 'pre-wrap', 
+              wordWrap: 'break-word', 
+              fontFamily: 'inherit',
+              fontSize: '1.05rem',
+              lineHeight: '1.8',
+              margin: 0,
+              color: 'inherit'
+            }}
+              dangerouslySetInnerHTML={{ __html: processNetScript().replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>').replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>') }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="card">
         <div className="card-header">
@@ -1217,6 +1478,7 @@ const SessionDetail = () => {
                     className="btn btn-primary"
                     onClick={() => {
                       setShowAddParticipant(true);
+                      setParticipantFlags({ flag_comment: false, flag_traffic: false, flag_echolink: false, flag_announcement: false });
                       // Initialize form with default values
                       participantForm.setValue('check_in_time', getCurrentTime());
                       participantForm.setValue('check_out_time', '');
@@ -1560,6 +1822,62 @@ const SessionDetail = () => {
                         />
                       </div>
 
+                      {/* Participant Flags */}
+                      <div className="form-group">
+                        <label className="form-label">Flags</label>
+                        <div className="d-flex flex-wrap gap-3">
+                          <div className="form-check">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id="flag_comment"
+                              checked={participantFlags.flag_comment}
+                              onChange={(e) => setParticipantFlags(prev => ({ ...prev, flag_comment: e.target.checked }))}
+                            />
+                            <label className="form-check-label" htmlFor="flag_comment">
+                              <span className="badge bg-info me-1">C</span> Comment
+                            </label>
+                          </div>
+                          <div className="form-check">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id="flag_traffic"
+                              checked={participantFlags.flag_traffic}
+                              onChange={(e) => setParticipantFlags(prev => ({ ...prev, flag_traffic: e.target.checked }))}
+                            />
+                            <label className="form-check-label" htmlFor="flag_traffic">
+                              <span className="badge bg-warning text-dark me-1">T</span> Traffic
+                            </label>
+                          </div>
+                          <div className="form-check">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id="flag_echolink"
+                              checked={participantFlags.flag_echolink}
+                              onChange={(e) => setParticipantFlags(prev => ({ ...prev, flag_echolink: e.target.checked }))}
+                            />
+                            <label className="form-check-label" htmlFor="flag_echolink">
+                              <span className="badge bg-success me-1">E</span> EchoLink
+                            </label>
+                          </div>
+                          <div className="form-check">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id="flag_announcement"
+                              checked={participantFlags.flag_announcement}
+                              onChange={(e) => setParticipantFlags(prev => ({ ...prev, flag_announcement: e.target.checked }))}
+                            />
+                            <label className="form-check-label" htmlFor="flag_announcement">
+                              <span className="badge bg-danger me-1">A</span> Announcement
+                            </label>
+                          </div>
+                        </div>
+                        <small className="text-muted">Tip: Add /c /t /e /a after call sign to set flags (e.g., W1AW/C/T)</small>
+                      </div>
+
                       <div className="d-flex gap-2">
                         <button 
                           type="submit" 
@@ -1618,17 +1936,26 @@ const SessionDetail = () => {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Call Sign</th>
-                        <th>Operator</th>
-                        <th>Location</th>
-                        <th>Check-in</th>
+                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleParticipantSort('call_sign')}>
+                          Call Sign <SortIndicator field="call_sign" />
+                        </th>
+                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleParticipantSort('name')}>
+                          Operator <SortIndicator field="name" />
+                        </th>
+                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleParticipantSort('location')}>
+                          Location <SortIndicator field="location" />
+                        </th>
+                        <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleParticipantSort('check_in_time')}>
+                          Check-in <SortIndicator field="check_in_time" />
+                        </th>
                         <th>Check-out</th>
+                        <th>Flags</th>
                         <th>Notes</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sessionData.participants.map((participant) => (
+                      {sortedParticipants.map((participant) => (
                         <tr 
                           key={participant.id}
                           style={{ cursor: 'pointer' }}
@@ -1683,6 +2010,14 @@ const SessionDetail = () => {
                             )}
                           </td>
                           <td>
+                            <div className="d-flex flex-wrap gap-1">
+                              {participant.flag_comment && <span className="badge bg-info" title="Comment">C</span>}
+                              {participant.flag_traffic && <span className="badge bg-warning text-dark" title="Traffic">T</span>}
+                              {participant.flag_echolink && <span className="badge bg-success" title="EchoLink">E</span>}
+                              {participant.flag_announcement && <span className="badge bg-danger" title="Announcement">A</span>}
+                            </div>
+                          </td>
+                          <td>
                             {participant.notes && (
                               <div className="small text-muted">{participant.notes}</div>
                             )}
@@ -1716,6 +2051,7 @@ const SessionDetail = () => {
                     className="btn btn-primary"
                     onClick={() => {
                       setShowAddParticipant(true);
+                      setParticipantFlags({ flag_comment: false, flag_traffic: false, flag_echolink: false, flag_announcement: false });
                       // Initialize form with default values
                       participantForm.setValue('check_in_time', getCurrentTime());
                       participantForm.setValue('check_out_time', '');
@@ -2281,6 +2617,7 @@ const SessionDetail = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

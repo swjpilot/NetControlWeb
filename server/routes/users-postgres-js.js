@@ -31,9 +31,9 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     const total = parseInt(countResult[0].count);
     
     // Get users with pagination
-    const dataQuery = `
-      SELECT id, username, email, role, call_sign, name, active, 
-             created_at, updated_at, last_login
+    let dataQuery = `
+      SELECT id, username, email, role, call_sign, name, phone_number, active, 
+             force_password_change, created_at, updated_at, last_login
       FROM users 
       ${whereClause}
       ORDER BY created_at DESC
@@ -41,7 +41,26 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     `;
     searchParams.push(parseInt(limit), parseInt(offset));
     
-    const users = await db.sql.unsafe(dataQuery, searchParams);
+    let users;
+    try {
+      users = await db.sql.unsafe(dataQuery, searchParams);
+    } catch (error) {
+      // If phone_number column doesn't exist yet, try without it
+      if (error.message && error.message.includes('phone_number')) {
+        console.log('phone_number column not found, querying without it');
+        dataQuery = `
+          SELECT id, username, email, role, call_sign, name, active, 
+                 created_at, updated_at, last_login
+          FROM users 
+          ${whereClause}
+          ORDER BY created_at DESC
+          LIMIT $${searchParams.length - 2 + 1} OFFSET $${searchParams.length - 2 + 2}
+        `;
+        users = await db.sql.unsafe(dataQuery, searchParams);
+      } else {
+        throw error;
+      }
+    }
     
     // Remove password hashes from response
     const safeUsers = users.map(user => ({
@@ -51,7 +70,9 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
       role: user.role,
       callSign: user.call_sign,
       name: user.name,
+      phoneNumber: user.phone_number,
       active: user.active,
+      forcePasswordChange: user.force_password_change,
       createdAt: user.created_at,
       updatedAt: user.updated_at,
       lastLogin: user.last_login
@@ -78,12 +99,27 @@ router.get('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
-    const result = await db.sql`
-      SELECT id, username, email, role, call_sign, name, active, 
-             created_at, updated_at, last_login
-      FROM users 
-      WHERE id = ${id}
-    `;
+    let result;
+    try {
+      result = await db.sql`
+        SELECT id, username, email, role, call_sign, name, phone_number, active, 
+               created_at, updated_at, last_login
+        FROM users 
+        WHERE id = ${id}
+      `;
+    } catch (error) {
+      // If phone_number column doesn't exist yet, try without it
+      if (error.message && error.message.includes('phone_number')) {
+        result = await db.sql`
+          SELECT id, username, email, role, call_sign, name, active, 
+                 created_at, updated_at, last_login
+          FROM users 
+          WHERE id = ${id}
+        `;
+      } else {
+        throw error;
+      }
+    }
     
     if (result.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -97,6 +133,7 @@ router.get('/:id', authenticateToken, requireAdmin, async (req, res) => {
       role: user.role,
       callSign: user.call_sign,
       name: user.name,
+      phoneNumber: user.phone_number,
       active: user.active,
       createdAt: user.created_at,
       updatedAt: user.updated_at,
@@ -112,7 +149,7 @@ router.get('/:id', authenticateToken, requireAdmin, async (req, res) => {
 // Create new user (admin only)
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { username, password, email, role, callSign, name } = req.body;
+    const { username, password, email, role, callSign, name, phoneNumber } = req.body;
     
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -145,14 +182,31 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
     
-    const result = await db.sql`
-      INSERT INTO users (
-        username, password_hash, email, role, call_sign, name, active, created_by
-      ) VALUES (
-        ${username}, ${passwordHash}, ${email || null}, ${role || 'user'}, 
-        ${callSign || null}, ${name || null}, true, ${req.user.userId}
-      ) RETURNING id, username, email, role, call_sign, name, active, created_at
-    `;
+    let result;
+    try {
+      result = await db.sql`
+        INSERT INTO users (
+          username, password_hash, email, role, call_sign, name, phone_number, active, created_by
+        ) VALUES (
+          ${username}, ${passwordHash}, ${email || null}, ${role || 'user'}, 
+          ${callSign || null}, ${name || null}, ${phoneNumber || null}, true, ${req.user.userId}
+        ) RETURNING id, username, email, role, call_sign, name, phone_number, active, created_at
+      `;
+    } catch (error) {
+      // If phone_number column doesn't exist yet, try without it
+      if (error.message && error.message.includes('phone_number')) {
+        result = await db.sql`
+          INSERT INTO users (
+            username, password_hash, email, role, call_sign, name, active, created_by
+          ) VALUES (
+            ${username}, ${passwordHash}, ${email || null}, ${role || 'user'}, 
+            ${callSign || null}, ${name || null}, true, ${req.user.userId}
+          ) RETURNING id, username, email, role, call_sign, name, active, created_at
+        `;
+      } else {
+        throw error;
+      }
+    }
     
     const newUser = result[0];
     res.status(201).json({
@@ -162,6 +216,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
       role: newUser.role,
       callSign: newUser.call_sign,
       name: newUser.name,
+      phoneNumber: newUser.phone_number,
       active: newUser.active,
       createdAt: newUser.created_at
     });
@@ -176,23 +231,10 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, role, callSign, name, active } = req.body;
-    
-    if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
-    }
+    const { email, role, callSign, name, phoneNumber, active, forcePasswordChange } = req.body;
     
     if (role && !['user', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
-    }
-    
-    // Check if username already exists for different user
-    const existingUsername = await db.sql`
-      SELECT id FROM users WHERE username = ${username} AND id != ${id}
-    `;
-    
-    if (existingUsername.length > 0) {
-      return res.status(400).json({ error: 'Username already exists' });
     }
     
     // Check if email already exists for different user (if provided)
@@ -206,18 +248,39 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
     
-    const result = await db.sql`
-      UPDATE users SET
-        username = ${username},
-        email = ${email || null},
-        role = ${role || 'user'},
-        call_sign = ${callSign || null},
-        name = ${name || null},
-        active = ${active !== undefined ? active : true},
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${id}
-      RETURNING id, username, email, role, call_sign, name, active, updated_at
-    `;
+    let result;
+    try {
+      result = await db.sql`
+        UPDATE users SET
+          email = ${email || null},
+          role = ${role || 'user'},
+          call_sign = ${callSign || null},
+          name = ${name || null},
+          phone_number = ${phoneNumber || null},
+          active = ${active !== undefined ? active : true},
+          force_password_change = ${forcePasswordChange !== undefined ? forcePasswordChange : false},
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${id}
+        RETURNING id, username, email, role, call_sign, name, phone_number, active, force_password_change, updated_at
+      `;
+    } catch (error) {
+      // If phone_number column doesn't exist yet, try without it
+      if (error.message && error.message.includes('phone_number')) {
+        result = await db.sql`
+          UPDATE users SET
+            email = ${email || null},
+            role = ${role || 'user'},
+            call_sign = ${callSign || null},
+            name = ${name || null},
+            active = ${active !== undefined ? active : true},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${id}
+          RETURNING id, username, email, role, call_sign, name, active, updated_at
+        `;
+      } else {
+        throw error;
+      }
+    }
     
     if (result.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -231,7 +294,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       role: user.role,
       callSign: user.call_sign,
       name: user.name,
+      phoneNumber: user.phone_number,
       active: user.active,
+      forcePasswordChange: user.force_password_change,
       updatedAt: user.updated_at
     });
     

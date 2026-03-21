@@ -4015,22 +4015,139 @@ select.form-control::-moz-appearance {
 
 /* Print styles */
 @media print {
+  /* Force light mode colors on key containers */
+  body,
+  html {
+    background: white !important;
+    color: black !important;
+  }
+
+  [data-theme="dark"] body,
+  [data-theme="dark"] .layout,
+  [data-theme="dark"] .main-content,
+  [data-theme="dark"] .container-fluid,
+  [data-theme="dark"] .card,
+  [data-theme="dark"] .card-header,
+  [data-theme="dark"] .card-body,
+  [data-theme="dark"] .table,
+  [data-theme="dark"] .table th,
+  [data-theme="dark"] .table td,
+  [data-theme="dark"] .alert,
+  [data-theme="dark"] .bg-light,
+  [data-theme="auto"] body,
+  [data-theme="auto"] .layout,
+  [data-theme="auto"] .main-content,
+  [data-theme="auto"] .container-fluid,
+  [data-theme="auto"] .card,
+  [data-theme="auto"] .card-header,
+  [data-theme="auto"] .card-body,
+  [data-theme="auto"] .table,
+  [data-theme="auto"] .table th,
+  [data-theme="auto"] .table td,
+  [data-theme="auto"] .alert,
+  [data-theme="auto"] .bg-light {
+    background-color: white !important;
+    color: black !important;
+    border-color: #dee2e6 !important;
+  }
+
+  [data-theme="dark"] .text-muted,
+  [data-theme="auto"] .text-muted {
+    color: #6c757d !important;
+  }
+
+  [data-theme="dark"] .card-header,
+  [data-theme="auto"] .card-header {
+    background-color: #f8f9fa !important;
+  }
+
+  [data-theme="dark"] .table-secondary,
+  [data-theme="auto"] .table-secondary {
+    background-color: #e9ecef !important;
+  }
+
+  [data-theme="dark"] .table-active,
+  [data-theme="auto"] .table-active {
+    background-color: #f8f9fa !important;
+  }
+
+  [data-theme="dark"] .fw-bold,
+  [data-theme="dark"] strong,
+  [data-theme="dark"] h3, [data-theme="dark"] h4, [data-theme="dark"] h5, [data-theme="dark"] h6,
+  [data-theme="auto"] .fw-bold,
+  [data-theme="auto"] strong,
+  [data-theme="auto"] h3, [data-theme="auto"] h4, [data-theme="auto"] h5, [data-theme="auto"] h6 {
+    color: black !important;
+  }
+
+  /* Page margins - smaller to fit content */
+  @page {
+    margin: 0.4in;
+  }
+
+  /* Hide all navigation and menu elements */
   .sidebar,
   .mobile-menu-toggle,
   .mobile-overlay,
-  .btn,
+  .user-menu,
+  .sidebar-header,
+  .sidebar-footer,
+  .nav-menu,
+  aside,
+  nav,
   .pagination,
-  .user-menu {
+  .version-footer,
+  .user-menu-trigger,
+  .user-dropdown,
+  .status,
+  button.mobile-menu-toggle {
     display: none !important;
   }
 
+  /* Hide buttons */
+  .btn:not(.print-visible) {
+    display: none !important;
+  }
+
+  /* Make main content full width */
+  .layout {
+    display: block !important;
+  }
+
   .main-content {
-    margin-left: 0;
-    padding: 0;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .container-fluid {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Fix Bootstrap row negative margins */
+  .row {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
 
   .table {
     font-size: 0.75rem;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 

@@ -207,7 +207,7 @@ const Settings = () => {
       database: ['auto_backup_enabled', 'auto_backup_interval'],
       ui: ['theme', 'items_per_page'],
       security: ['session_timeout', 'require_password_change', 'min_password_length'],
-      integration: ['precheckin_url', 'netreport_url']
+      integration: ['precheckin_url', 'netreport_url', 'net_script_template']
     };
 
     const relevantFields = tabFields[tab] || [];
@@ -831,11 +831,11 @@ const Settings = () => {
                       <input
                         type="url"
                         className="form-control"
-                        placeholder="https://brars.hamsunite.org/api/net-report"
+                        placeholder="https://brars.hamsunite.org/cgi-bin/netReport"
                         {...currentForm.register('netreport_url')}
                       />
                       <div className="form-text">
-                        URL to submit completed net reports (for future use)
+                        Base URL for net report submission. Parameters (callsign, date, check-ins, etc.) are appended automatically.
                       </div>
                     </div>
 
@@ -843,6 +843,51 @@ const Settings = () => {
                       <AlertTriangle size={16} className="me-2" />
                       <strong>Note:</strong> These URLs connect to external services for pre-check-in data 
                       and net report submission. Ensure the URLs are correct and the services are accessible.
+                    </div>
+
+                    <h4 className="mt-4 mb-3">Net Script Template</h4>
+                    <div className="form-group">
+                      <label className="form-label">Script Template</label>
+                      <textarea
+                        className="form-control"
+                        rows="12"
+                        placeholder={"Good evening, this is {CALLSIGN}, {FIRSTNAME}, your net control for the {NET_TYPE} net on {DATE}.\n\nWe are operating on {FREQUENCY} {MODE}.\n\nWe currently have {CHECKINS} check-ins and {TRAFFIC} traffic items.\n\nThis net is now open for check-ins..."}
+                        style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
+                        {...currentForm.register('net_script_template')}
+                      />
+                      <div className="form-text">
+                        Write your net script here. Use the following variables that will be replaced with session data:
+                      </div>
+                      <div className="mt-2">
+                        <div className="d-flex flex-wrap gap-2">
+                          {[
+                            { var: '{FIRSTNAME}', desc: 'NC first name' },
+                            { var: '{FULLNAME}', desc: 'NC full name' },
+                            { var: '{CALLSIGN}', desc: 'NC call sign' },
+                            { var: '{CITY}', desc: 'NC city' },
+                            { var: '{DATE}', desc: 'Session date' },
+                            { var: '{DAY_OF_WEEK}', desc: 'Day of week' },
+                            { var: '{STARTING_GROUP}', desc: 'Starting group (Alpha–Delta, etc.)' },
+                            { var: '{FREQUENCY}', desc: 'Frequency' },
+                            { var: '{MODE}', desc: 'Mode (FM, SSB, etc.)' },
+                            { var: '{NET_TYPE}', desc: 'Net type' },
+                            { var: '{CHECKINS}', desc: 'Check-in count' },
+                            { var: '{TRAFFIC}', desc: 'Traffic count' },
+                            { var: '{START_TIME}', desc: 'Start time' },
+                            { var: '{END_TIME}', desc: 'End time' },
+                            { var: '{POWER}', desc: 'Power' },
+                            { var: '{ANTENNA}', desc: 'Antenna' },
+                            { var: '{TOMORROW_FIRSTNAME}', desc: "Tomorrow's NC first name" },
+                            { var: '{TOMORROW_CALLSIGN}', desc: "Tomorrow's NC call sign" },
+                            { var: '[i]...[/i]', desc: 'Italic text' },
+                            { var: '[b]...[/b]', desc: 'Bold text' },
+                          ].map(v => (
+                            <span key={v.var} className="badge bg-secondary" style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                              {v.var} <small className="opacity-75">= {v.desc}</small>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

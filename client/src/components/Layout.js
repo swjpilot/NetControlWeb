@@ -50,6 +50,7 @@ const Layout = ({ children }) => {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/sessions', label: 'Net Sessions', icon: Calendar },
+    { path: '/schedules', label: 'Net Schedules', icon: Activity },
     { path: '/operators', label: 'Operators', icon: Users },
     { path: '/qrz', label: 'QRZ Lookup', icon: Radio },
     { path: '/fcc', label: 'FCC Database', icon: Database },

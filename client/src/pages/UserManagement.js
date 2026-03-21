@@ -14,7 +14,8 @@ import {
   X,
   Loader,
   Key,
-  Lock
+  Lock,
+  Phone
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../contexts/AuthContext';
@@ -30,6 +31,28 @@ const UserManagement = () => {
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm();
   const { register: registerPassword, handleSubmit: handlePasswordSubmit, reset: resetPassword, formState: { errors: passwordErrors } } = useForm();
+
+  // Format phone number to (XXX) XXX-XXXX
+  const formatPhoneNumber = (value) => {
+    if (!value) return value;
+    
+    // Remove all non-numeric characters
+    const phoneNumber = value.replace(/[^\d]/g, '');
+    
+    // Format based on length
+    if (phoneNumber.length < 4) {
+      return phoneNumber;
+    } else if (phoneNumber.length < 7) {
+      return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
+    } else {
+      return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
+    }
+  };
+
+  const handlePhoneNumberChange = (e) => {
+    const formatted = formatPhoneNumber(e.target.value);
+    setValue('phoneNumber', formatted);
+  };
 
   // Helper function to format dates safely
   const formatDate = (dateString) => {
@@ -128,7 +151,9 @@ const UserManagement = () => {
           role: data.role,
           callSign: data.callSign,
           name: data.name,
-          active: data.active
+          phoneNumber: data.phoneNumber,
+          active: data.active,
+          forcePasswordChange: data.forcePasswordChange
         }
       });
     } else {
@@ -138,11 +163,14 @@ const UserManagement = () => {
 
   const handleEdit = (user) => {
     setEditingUser(user);
+    setValue('username', user.username);
     setValue('email', user.email);
     setValue('role', user.role);
     setValue('callSign', user.callSign); // Use camelCase from API response
     setValue('name', user.name);
+    setValue('phoneNumber', user.phoneNumber);
     setValue('active', user.active);
+    setValue('forcePasswordChange', user.forcePasswordChange || false);
     setShowAddForm(true);
   };
 
@@ -192,26 +220,31 @@ const UserManagement = () => {
           <div className="card-body">
             <form onSubmit={handleSubmit(onSubmit)}>
               <div className="form-row">
-                {!editingUser && (
-                  <div className="form-group">
-                    <label className="form-label">Username *</label>
-                    <input
-                      type="text"
-                      className={`form-control ${errors.username ? 'error' : ''}`}
-                      placeholder="Enter username"
-                      {...register('username', { 
-                        required: 'Username is required',
-                        minLength: {
-                          value: 3,
-                          message: 'Username must be at least 3 characters'
-                        }
-                      })}
-                    />
-                    {errors.username && (
-                      <div className="form-error">{errors.username.message}</div>
-                    )}
-                  </div>
-                )}
+                <div className="form-group">
+                  <label className="form-label">
+                    Username {!editingUser && '*'}
+                  </label>
+                  <input
+                    type="text"
+                    className={`form-control ${errors.username ? 'error' : ''}`}
+                    placeholder="Enter username"
+                    readOnly={!!editingUser}
+                    required={!editingUser}
+                    {...register('username', { 
+                      required: editingUser ? false : 'Username is required',
+                      minLength: editingUser ? undefined : {
+                        value: 3,
+                        message: 'Username must be at least 3 characters'
+                      }
+                    })}
+                  />
+                  {errors.username && (
+                    <div className="form-error">{errors.username.message}</div>
+                  )}
+                  {editingUser && (
+                    <small className="text-muted">Username cannot be changed</small>
+                  )}
+                </div>
                 
                 <div className="form-group">
                   <label className="form-label">Name</label>
@@ -243,6 +276,21 @@ const UserManagement = () => {
                   )}
                 </div>
                 
+                <div className="form-group">
+                  <label className="form-label">Phone Number</label>
+                  <input
+                    type="tel"
+                    className="form-control"
+                    placeholder="(555) 123-4567"
+                    {...register('phoneNumber')}
+                    onChange={handlePhoneNumberChange}
+                    maxLength="14"
+                  />
+                  <small className="text-muted">Format: (XXX) XXX-XXXX</small>
+                </div>
+              </div>
+
+              <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Call Sign</label>
                   <input
@@ -307,6 +355,16 @@ const UserManagement = () => {
                       />
                       <label className="form-check-label">
                         Active User
+                      </label>
+                    </div>
+                    <div className="form-check mt-2">
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        {...register('forcePasswordChange')}
+                      />
+                      <label className="form-check-label">
+                        Force password change on next login
                       </label>
                     </div>
                   </div>
@@ -473,10 +531,18 @@ const UserManagement = () => {
                       </td>
                       <td>
                         {user.email && (
-                          <div className="d-flex align-items-center">
+                          <div className="d-flex align-items-center mb-1">
                             <Mail size={14} className="text-muted me-1" />
-                            <a href={`mailto:${user.email}`} className="text-decoration-none">
+                            <a href={`mailto:${user.email}`} className="text-decoration-none small">
                               {user.email}
+                            </a>
+                          </div>
+                        )}
+                        {user.phoneNumber && (
+                          <div className="d-flex align-items-center">
+                            <Phone size={14} className="text-muted me-1" />
+                            <a href={`tel:${user.phoneNumber}`} className="text-decoration-none small">
+                              {user.phoneNumber}
                             </a>
                           </div>
                         )}

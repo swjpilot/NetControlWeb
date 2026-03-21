@@ -211,6 +211,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const participants = await db.sql`
       SELECT sp.id, sp.call_sign, sp.name, sp.check_in_time, sp.check_out_time, sp.notes, 
              sp.created_at, sp.updated_at, sp.operator_id,
+             COALESCE(sp.flag_comment, false) as flag_comment,
+             COALESCE(sp.flag_traffic, false) as flag_traffic,
+             COALESCE(sp.flag_echolink, false) as flag_echolink,
+             COALESCE(sp.flag_announcement, false) as flag_announcement,
              o.name as operator_name, 
              o.city as operator_city,
              o.state as operator_state,
@@ -382,7 +386,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 router.post('/:id/participants', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { call_sign, name, check_in_time, check_out_time, notes, operator_id } = req.body;
+    const { call_sign, name, check_in_time, check_out_time, notes, operator_id, flag_comment, flag_traffic, flag_echolink, flag_announcement } = req.body;
     
     if (!call_sign) {
       return res.status(400).json({ error: 'Call sign is required' });
@@ -440,10 +444,12 @@ router.post('/:id/participants', authenticateToken, async (req, res) => {
     
     const result = await db.sql`
       INSERT INTO session_participants (
-        session_id, call_sign, name, check_in_time, check_out_time, notes, operator_id
+        session_id, call_sign, name, check_in_time, check_out_time, notes, operator_id,
+        flag_comment, flag_traffic, flag_echolink, flag_announcement
       ) VALUES (
         ${id}, ${call_sign.toUpperCase()}, ${name || null}, 
-        ${check_in_time || null}, ${check_out_time || null}, ${notes || null}, ${finalOperatorId || null}
+        ${check_in_time || null}, ${check_out_time || null}, ${notes || null}, ${finalOperatorId || null},
+        ${flag_comment || false}, ${flag_traffic || false}, ${flag_echolink || false}, ${flag_announcement || false}
       ) RETURNING *
     `;
     
@@ -472,7 +478,7 @@ router.post('/:id/participants', authenticateToken, async (req, res) => {
 router.put('/:sessionId/participants/:participantId', authenticateToken, async (req, res) => {
   try {
     const { sessionId, participantId } = req.params;
-    const { call_sign, name, check_in_time, check_out_time, notes, operator_id } = req.body;
+    const { call_sign, name, check_in_time, check_out_time, notes, operator_id, flag_comment, flag_traffic, flag_echolink, flag_announcement } = req.body;
     
     if (!call_sign) {
       return res.status(400).json({ error: 'Call sign is required' });
@@ -496,6 +502,10 @@ router.put('/:sessionId/participants/:participantId', authenticateToken, async (
         check_out_time = ${check_out_time || null},
         notes = ${notes || null},
         operator_id = ${operator_id || null},
+        flag_comment = ${flag_comment || false},
+        flag_traffic = ${flag_traffic || false},
+        flag_echolink = ${flag_echolink || false},
+        flag_announcement = ${flag_announcement || false},
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${participantId} AND session_id = ${sessionId}
       RETURNING *
@@ -740,6 +750,112 @@ router.post('/fix-traffic-counts', async (req, res) => {
       error: 'Failed to fix traffic counts',
       details: error.message
     });
+  }
+});
+
+// Submit net report to external URL
+router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get session data
+    const sessionResult = await db.sql`
+      SELECT s.*, 
+             COUNT(DISTINCT sp.id) as checkin_count,
+             COUNT(DISTINCT st.id) as traffic_count
+      FROM sessions s
+      LEFT JOIN session_participants sp ON s.id = sp.session_id
+      LEFT JOIN session_traffic st ON s.id = st.session_id
+      WHERE s.id = ${id}
+      GROUP BY s.id
+    `;
+
+    if (sessionResult.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const session = sessionResult[0];
+
+    // Check for announcements (participants with flag_announcement)
+    let hasAnnouncements = false;
+    try {
+      const announcementCheck = await db.sql`
+        SELECT COUNT(*) as count FROM session_participants 
+        WHERE session_id = ${id} AND flag_announcement = true
+      `;
+      hasAnnouncements = parseInt(announcementCheck[0].count) > 0;
+    } catch (e) {
+      // flag_announcement column may not exist yet
+    }
+
+    // Get net report URL from settings
+    const urlSetting = await db.sql`
+      SELECT value FROM settings WHERE key = 'netreport_url'
+    `;
+
+    if (!urlSetting.length || !urlSetting[0].value) {
+      return res.status(503).json({ error: 'Net report URL not configured in settings' });
+    }
+
+    const baseUrl = urlSetting[0].value;
+
+    // Parse the date
+    const sessionDate = new Date(session.session_date);
+    const month = String(sessionDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(sessionDate.getUTCDate()).padStart(2, '0');
+    const year = sessionDate.getUTCFullYear();
+    const formattedDate = `${month}/${day}/${year}`;
+
+    // Extract first name from net_control_name
+    const firstName = (session.net_control_name || '').split(' ')[0] || '';
+
+    // Map mode: FM=1, SSB=2, etc (default 1)
+    const modeMap = { 'FM': 1, 'SSB': 2, 'CW': 3, 'Digital': 4, 'DMR': 5 };
+    const modeValue = modeMap[session.mode] || 1;
+
+    // Build query params
+    const params = new URLSearchParams({
+      f: firstName,
+      s: (session.net_control_call || '').toLowerCase(),
+      d: formattedDate,
+      m: modeValue,
+      c: parseInt(session.checkin_count) || 0,
+      t: parseInt(session.traffic_count) || 0,
+      a: hasAnnouncements ? 'Yes' : 'No'
+    });
+
+    const submitUrl = `${baseUrl}?${params.toString()}`;
+
+    // Submit via GET request
+    const axios = require('axios');
+    const response = await axios.get(submitUrl, { timeout: 15000 });
+
+    res.json({
+      success: true,
+      message: 'Net report submitted successfully',
+      url: submitUrl,
+      response_status: response.status,
+      data: {
+        firstName,
+        callSign: session.net_control_call,
+        date: formattedDate,
+        mode: modeValue,
+        checkins: parseInt(session.checkin_count) || 0,
+        traffic: parseInt(session.traffic_count) || 0,
+        announcements: hasAnnouncements ? 'Yes' : 'No'
+      }
+    });
+
+  } catch (error) {
+    console.error('Submit net report error:', error);
+    if (error.response) {
+      res.status(error.response.status).json({
+        error: 'Net report submission failed',
+        details: `HTTP ${error.response.status}: ${error.response.statusText}`
+      });
+    } else {
+      res.status(500).json({ error: error.message || 'Failed to submit net report' });
+    }
   }
 });
 

@@ -131,6 +131,10 @@ export const AuthProvider = ({ children }) => {
     return !!user && !!token;
   };
 
+  const updateUser = (updatedUser) => {
+    setUser(updatedUser);
+  };
+
   const value = {
     user,
     loading,
@@ -140,7 +144,8 @@ export const AuthProvider = ({ children }) => {
     updateProfile,
     changePassword,
     isAdmin,
-    isAuthenticated
+    isAuthenticated,
+    updateUser
   };
 
   return (

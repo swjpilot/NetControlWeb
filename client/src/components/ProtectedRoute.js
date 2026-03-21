@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { loading, isAuthenticated, isAdmin } = useAuth();
+  const { user, loading, isAuthenticated, isAdmin } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -20,6 +20,11 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
   if (!isAuthenticated()) {
     // Redirect to login page with return url
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Check if user needs to change password (but allow access to change-password page)
+  if (user?.forcePasswordChange && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (requireAdmin && !isAdmin()) {

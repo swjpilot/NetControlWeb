@@ -2,7 +2,41 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/postgres-js-db');
 const axios = require('axios');
+const xml2js = require('xml2js');
 const { authenticateToken } = require('./auth-postgres-js');
+const { getQRZSession, mapLicenseClass } = require('./qrz-postgres-js');
+
+// QRZ lookup helper for pre-check-in processing
+async function lookupQRZ(callSign) {
+  try {
+    const sessionKey = await getQRZSession();
+    const lookupUrl = 'https://xmldata.qrz.com/xml/current/';
+    const response = await axios.get(lookupUrl, {
+      params: { s: sessionKey, callsign: callSign.toUpperCase() },
+      timeout: 10000
+    });
+    const parser = new xml2js.Parser();
+    const result = await parser.parseStringPromise(response.data);
+    if (result.QRZDatabase && result.QRZDatabase.Callsign && result.QRZDatabase.Callsign[0]) {
+      const d = result.QRZDatabase.Callsign[0];
+      const rawClass = d.class ? d.class[0] : '';
+      return {
+        callsign: d.call ? d.call[0] : callSign,
+        name: d.fname && d.name ? `${d.fname[0]} ${d.name[0]}` : (d.name ? d.name[0] : ''),
+        address: d.addr1 ? d.addr1[0] : '',
+        city: d.addr2 ? d.addr2[0] : '',
+        state: d.state ? d.state[0] : '',
+        email: d.email ? d.email[0] : '',
+        grid: d.grid ? d.grid[0] : '',
+        licenseClass: mapLicenseClass(rawClass)
+      };
+    }
+    return null;
+  } catch (error) {
+    console.log(`QRZ lookup failed for ${callSign}: ${error.message}`);
+    return null;
+  }
+}
 
 // Function to parse HTML response from BRARS pre-check-in page
 function parsePreCheckInHTML(html) {
@@ -239,31 +273,62 @@ router.post('/process', authenticateToken, async (req, res) => {
         `;
         
         if (existingParticipant.length > 0) {
-          errors.push({ participant, error: 'Participant already exists in session' });
+          errors.push({ callSign: callSign.toUpperCase(), participant, error: 'Participant already exists in session' });
           continue;
         }
         
         // Check if operator exists, create if not
         let operatorId = null;
+        let operatorCreated = false;
+        let hasQRZData = false;
+        let resolvedName = firstName || null;
         let operatorExists = await db.sql`
-          SELECT id FROM operators WHERE call_sign = ${callSign.toUpperCase()}
+          SELECT id, name FROM operators WHERE call_sign = ${callSign.toUpperCase()}
         `;
         
         if (operatorExists.length === 0) {
-          // Create operator from pre-check-in data
-          const newOperator = await db.sql`
-            INSERT INTO operators (call_sign, name, city, active, notes)
-            VALUES (
-              ${callSign.toUpperCase()}, 
-              ${firstName || null}, 
-              ${location || null}, 
-              true,
-              ${`Added from pre-check-in on ${new Date().toLocaleDateString()}. ${announce || ''}`}
-            ) RETURNING id
-          `;
-          operatorId = newOperator[0].id;
+          // Try QRZ lookup first to get full operator details
+          const qrzData = await lookupQRZ(callSign);
+          
+          if (qrzData) {
+            hasQRZData = true;
+            resolvedName = qrzData.name || firstName || null;
+            // Create operator with QRZ data
+            const newOperator = await db.sql`
+              INSERT INTO operators (call_sign, name, address, city, state, email, license_class, active, notes)
+              VALUES (
+                ${callSign.toUpperCase()}, 
+                ${resolvedName},
+                ${qrzData.address || null},
+                ${qrzData.city || location || null}, 
+                ${qrzData.state || null},
+                ${qrzData.email || null},
+                ${qrzData.licenseClass || null},
+                true,
+                ${`Added from pre-check-in with QRZ data on ${new Date().toLocaleDateString()}. Grid: ${qrzData.grid || 'N/A'}. ${announce || ''}`}
+              ) RETURNING id
+            `;
+            operatorId = newOperator[0].id;
+            operatorCreated = true;
+          } else {
+            // Fallback: create operator from pre-check-in data only
+            const newOperator = await db.sql`
+              INSERT INTO operators (call_sign, name, city, active, notes)
+              VALUES (
+                ${callSign.toUpperCase()}, 
+                ${firstName || null}, 
+                ${location || null}, 
+                true,
+                ${`Added from pre-check-in on ${new Date().toLocaleDateString()}. ${announce || ''}`}
+              ) RETURNING id
+            `;
+            operatorId = newOperator[0].id;
+            operatorCreated = true;
+          }
         } else {
           operatorId = operatorExists[0].id;
+          // Use the operator's full name from the database
+          resolvedName = operatorExists[0].name || firstName || null;
         }
         
         // Add participant to session with operator link
@@ -271,20 +336,24 @@ router.post('/process', authenticateToken, async (req, res) => {
           INSERT INTO session_participants (
             session_id, call_sign, name, notes, operator_id
           ) VALUES (
-            ${sessionId}, ${callSign.toUpperCase()}, ${firstName || null}, 
+            ${sessionId}, ${callSign.toUpperCase()}, ${resolvedName}, 
             ${`Pre-check-in: ${announce || 'No announcement'}`}, ${operatorId}
           ) RETURNING *
         `;
         
         results.push({
+          callSign: callSign.toUpperCase(),
           participant,
           added: participantResult[0],
+          operatorCreated,
+          hasQRZData,
           status: 'success'
         });
         
       } catch (error) {
         console.error(`Error processing participant ${participant.callSign}:`, error);
         errors.push({ 
+          callSign: participant.callSign,
           participant, 
           error: error.message || 'Failed to process participant' 
         });
