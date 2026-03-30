@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery, useMutation } from 'react-query';
 import { 
   FileText, 
   Download, 
@@ -14,12 +14,16 @@ import {
   Filter,
   Printer,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Mail
 } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { formatDateLocal } from '../utils/dateUtils';
+import { useAuth } from '../contexts/AuthContext';
 
 const Reports = () => {
+  const { isAdmin } = useAuth();
   const [activeReport, setActiveReport] = useState('monthly-net-control');
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
@@ -78,6 +82,12 @@ const Reports = () => {
       name: 'Net Controller Contacts',
       icon: Award,
       description: 'Contact details for all net controllers'
+    },
+    {
+      id: 'nc-statistics',
+      name: 'NC Statistics',
+      icon: BarChart3,
+      description: 'Net controller performance statistics'
     }
   ];
 
@@ -153,6 +163,36 @@ const Reports = () => {
     setEndDate(new Date().toISOString().split('T')[0]);
   };
 
+  // Monthly email report mutation (admin only)
+  const sendMonthlyEmailMutation = useMutation(
+    (recipientEmail) => axios.post('/api/reports/send-monthly-email', { recipient_email: recipientEmail }),
+    {
+      onSuccess: (response) => {
+        toast.success(response.data.message);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to send monthly report email');
+      }
+    }
+  );
+
+  // Fetch default ARRL section email from settings
+  const { data: arrlEmail } = useQuery(
+    'arrl-section-email',
+    () => axios.get('/api/settings').then(res => res.data.settings?.arrl_section_email || ''),
+    { enabled: isAdmin() }
+  );
+
+  const handleSendMonthlyEmail = () => {
+    const defaultEmail = arrlEmail || '';
+    const email = prompt('Send monthly net report to:', defaultEmail);
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sendMonthlyEmailMutation.mutate(email);
+    } else if (email) {
+      toast.error('Please enter a valid email address');
+    }
+  };
+
   return (
     <div className="container-fluid py-4">
       <div className="row mb-4 no-print">
@@ -162,6 +202,16 @@ const Reports = () => {
             Reports
           </h2>
           <p className="text-muted">Generate and view net control reports</p>
+          {isAdmin() && (
+            <button
+              className="btn btn-outline-primary mt-2"
+              onClick={handleSendMonthlyEmail}
+              disabled={sendMonthlyEmailMutation.isLoading}
+            >
+              <Mail size={16} className="me-2" />
+              {sendMonthlyEmailMutation.isLoading ? 'Sending...' : 'Email Monthly Report'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -345,7 +395,7 @@ const MonthlyNetControlReport = ({ report, isLoading, reportGenerated, startDate
             <div className="card-body text-center py-3">
               <h3 className="mb-1">Net Control Activity Report</h3>
               <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
-                {new Date(report.period.start_date).toLocaleDateString()} - {new Date(report.period.end_date).toLocaleDateString()}
+                {formatDateLocal(report.period.start_date)} - {formatDateLocal(report.period.end_date)}
               </p>
             </div>
           </div>
@@ -473,7 +523,7 @@ const MonthlyNetControlReport = ({ report, isLoading, reportGenerated, startDate
                           <tr className={isNewController ? 'table-active' : ''}>
                             <td className="fw-bold">{detail.net_control_call}</td>
                             <td>{detail.net_control_name}</td>
-                            <td>{new Date(detail.session_date).toLocaleDateString()}</td>
+                            <td>{formatDateLocal(detail.session_date)}</td>
                             <td className="text-center">{detail.checkins}</td>
                           </tr>
                           {isLastOfController && (
@@ -513,7 +563,7 @@ const MonthlyNetControlReport = ({ report, isLoading, reportGenerated, startDate
                   <tbody>
                     {report.chronological_list.map((session, idx) => (
                       <tr key={idx}>
-                        <td>{new Date(session.session_date).toLocaleDateString()}</td>
+                        <td>{formatDateLocal(session.session_date)}</td>
                         <td className="fw-bold">{session.net_control_call}</td>
                         <td>{session.net_control_name}</td>
                         <td className="text-center">{session.checkins}</td>
@@ -568,7 +618,7 @@ const MonthlyNetControlReport = ({ report, isLoading, reportGenerated, startDate
                   {report.statistics.best_session && (
                     <div className="alert alert-success mb-2">
                       <strong>Best Session:</strong><br />
-                      {new Date(report.statistics.best_session.session_date).toLocaleDateString()}<br />
+                      {formatDateLocal(report.statistics.best_session.session_date)}<br />
                       {report.statistics.best_session.net_control_call} - {report.statistics.best_session.net_control_name}<br />
                       <strong>{report.statistics.best_session.checkins} check-ins</strong>
                     </div>
@@ -576,7 +626,7 @@ const MonthlyNetControlReport = ({ report, isLoading, reportGenerated, startDate
                   {report.statistics.worst_session && (
                     <div className="alert alert-warning mb-0">
                       <strong>Lowest Attendance:</strong><br />
-                      {new Date(report.statistics.worst_session.session_date).toLocaleDateString()}<br />
+                      {formatDateLocal(report.statistics.worst_session.session_date)}<br />
                       {report.statistics.worst_session.net_control_call} - {report.statistics.worst_session.net_control_name}<br />
                       <strong>{report.statistics.worst_session.checkins} check-ins</strong>
                     </div>
@@ -948,7 +998,7 @@ const OtherReports = ({ activeReport, reportTypes, data, isLoading, startDate, e
         <div>
           <h5 className="mb-0">{currentReport?.name}</h5>
           <small className="text-muted">
-            {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+            {formatDateLocal(startDate)} - {formatDateLocal(endDate)}
           </small>
         </div>
         <button className="btn btn-sm btn-outline-primary" onClick={onPrint}>
@@ -963,6 +1013,7 @@ const OtherReports = ({ activeReport, reportTypes, data, isLoading, startDate, e
         {activeReport === 'geographic-distribution' && <GeographicDistributionReport data={data} />}
         {activeReport === 'traffic-report' && <TrafficReport data={data} />}
         {activeReport === 'net-controller-contacts' && <NetControllerContactsReport data={data} />}
+        {activeReport === 'nc-statistics' && <NCStatisticsReport data={data} />}
       </div>
     </div>
   );
@@ -1037,7 +1088,7 @@ const SessionSummaryReport = ({ data }) => {
           <tbody>
             {data.sessions?.map(session => (
               <tr key={session.id}>
-                <td>{new Date(session.session_date).toLocaleDateString()}</td>
+                <td>{formatDateLocal(session.session_date)}</td>
                 <td>
                   <strong>{session.net_control_call}</strong>
                   {session.net_control_name && (
@@ -1225,8 +1276,8 @@ const OperatorActivityReport = ({ data }) => {
                       </div>
                     </div>
                   </td>
-                  <td>{new Date(operator.first_session).toLocaleDateString()}</td>
-                  <td>{new Date(operator.last_session).toLocaleDateString()}</td>
+                  <td>{formatDateLocal(operator.first_session)}</td>
+                  <td>{formatDateLocal(operator.last_session)}</td>
                   <td className="small">{operator.locations || 'N/A'}</td>
                 </tr>
               ))}
@@ -1389,7 +1440,7 @@ const GeographicDistributionReport = ({ data }) => {
               <tbody>
                 {data.session_diversity?.map((session, idx) => (
                   <tr key={idx}>
-                    <td>{new Date(session.session_date).toLocaleDateString()}</td>
+                    <td>{formatDateLocal(session.session_date)}</td>
                     <td className="small">{session.net_control_call}</td>
                     <td className="text-center">
                       <span className="badge bg-success">{session.unique_locations}</span>
@@ -1654,7 +1705,7 @@ const TrafficReport = ({ data }) => {
             <tbody>
               {data.traffic_by_session?.map((session, idx) => (
                 <tr key={idx}>
-                  <td>{new Date(session.session_date).toLocaleDateString()}</td>
+                  <td>{formatDateLocal(session.session_date)}</td>
                   <td>
                     <strong>{session.net_control_call}</strong>
                     {session.net_control_name && (
@@ -1690,7 +1741,7 @@ const TrafficReport = ({ data }) => {
               <tbody>
                 {data.traffic_timeline.map((day, idx) => (
                   <tr key={idx}>
-                    <td>{new Date(day.session_date).toLocaleDateString()}</td>
+                    <td>{formatDateLocal(day.session_date)}</td>
                     <td><span className="badge bg-info">{day.message_count}</span></td>
                     <td>
                       <div className="progress" style={{ height: '20px' }}>
@@ -1789,6 +1840,168 @@ const NetControllerContactsReport = ({ data }) => {
           Use the Print button above to generate a PDF version of this contact list.
         </small>
       </div>
+    </div>
+  );
+};
+
+// NC Statistics Report Component
+const NCStatisticsReport = ({ data }) => {
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  if (!data) {
+    return (
+      <div className="text-center py-5 text-muted">
+        <BarChart3 size={48} className="mb-3 opacity-50" />
+        <p>No net controller statistics available.</p>
+      </div>
+    );
+  }
+
+  const { controllers, day_of_week, monthly_trend, totals, period } = data;
+
+  // Build day-of-week map per controller
+  const dowMap = {};
+  (day_of_week || []).forEach(row => {
+    if (!dowMap[row.net_control_call]) dowMap[row.net_control_call] = {};
+    dowMap[row.net_control_call][row.dow] = parseInt(row.count);
+  });
+
+  return (
+    <div>
+      {/* Summary Cards */}
+      <div className="d-flex flex-wrap gap-3 mb-4">
+        <div className="card" style={{ minWidth: '140px', flex: 1 }}>
+          <div className="card-body text-center p-3">
+            <div className="h3 mb-0">{parseInt(totals?.total_sessions) || 0}</div>
+            <small className="text-muted">Total Sessions</small>
+          </div>
+        </div>
+        <div className="card" style={{ minWidth: '140px', flex: 1 }}>
+          <div className="card-body text-center p-3">
+            <div className="h3 mb-0">{parseInt(totals?.unique_controllers) || 0}</div>
+            <small className="text-muted">Unique NCs</small>
+          </div>
+        </div>
+        <div className="card" style={{ minWidth: '140px', flex: 1 }}>
+          <div className="card-body text-center p-3">
+            <div className="h3 mb-0">{parseInt(totals?.total_checkins) || 0}</div>
+            <small className="text-muted">Total Check-ins</small>
+          </div>
+        </div>
+        <div className="card" style={{ minWidth: '140px', flex: 1 }}>
+          <div className="card-body text-center p-3">
+            <div className="h3 mb-0">{parseInt(totals?.total_traffic) || 0}</div>
+            <small className="text-muted">Total Traffic</small>
+          </div>
+        </div>
+        <div className="card" style={{ minWidth: '140px', flex: 1 }}>
+          <div className="card-body text-center p-3">
+            <div className="h3 mb-0">{parseFloat(totals?.avg_checkins_per_session) || 0}</div>
+            <small className="text-muted">Avg Check-ins/Session</small>
+          </div>
+        </div>
+      </div>
+
+      {/* Controller Leaderboard */}
+      <div className="mb-4">
+        <h5>Net Controller Leaderboard</h5>
+        <div className="table-responsive">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Call Sign</th>
+                <th>Name</th>
+                <th>Sessions</th>
+                <th>Check-ins</th>
+                <th>Traffic</th>
+                <th>Avg/Session</th>
+                <th>Best Session</th>
+                <th>First</th>
+                <th>Last</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(controllers || []).map((nc, idx) => (
+                <tr key={nc.net_control_call}>
+                  <td>{idx + 1}</td>
+                  <td><strong>{nc.net_control_call}</strong></td>
+                  <td>{nc.net_control_name || ''}</td>
+                  <td><span className="badge bg-primary">{parseInt(nc.sessions_count)}</span></td>
+                  <td>{parseInt(nc.total_checkins)}</td>
+                  <td>{parseInt(nc.total_traffic)}</td>
+                  <td>{parseFloat(nc.avg_checkins)}</td>
+                  <td>{parseInt(nc.max_checkins)}</td>
+                  <td className="small">{formatDateLocal(nc.first_session)}</td>
+                  <td className="small">{formatDateLocal(nc.last_session)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Day of Week Breakdown */}
+      {controllers && controllers.length > 0 && (
+        <div className="mb-4">
+          <h5>Sessions by Day of Week</h5>
+          <div className="table-responsive">
+            <table className="table table-sm">
+              <thead>
+                <tr>
+                  <th>Call Sign</th>
+                  {dayNames.map(d => <th key={d} className="text-center">{d.slice(0, 3)}</th>)}
+                  <th className="text-center">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {controllers.map(nc => {
+                  const ncDow = dowMap[nc.net_control_call] || {};
+                  const total = Object.values(ncDow).reduce((a, b) => a + b, 0);
+                  return (
+                    <tr key={nc.net_control_call}>
+                      <td><strong>{nc.net_control_call}</strong></td>
+                      {[0,1,2,3,4,5,6].map(d => (
+                        <td key={d} className="text-center">{ncDow[d] || '-'}</td>
+                      ))}
+                      <td className="text-center"><strong>{total}</strong></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly Trend */}
+      {monthly_trend && monthly_trend.length > 0 && (
+        <div className="mb-4">
+          <h5>Monthly Trend</h5>
+          <div className="table-responsive">
+            <table className="table table-sm">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Sessions</th>
+                  <th>Unique NCs</th>
+                  <th>Total Check-ins</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthly_trend.map(row => (
+                  <tr key={row.month}>
+                    <td>{row.month}</td>
+                    <td>{parseInt(row.sessions)}</td>
+                    <td>{parseInt(row.unique_controllers)}</td>
+                    <td>{parseInt(row.total_checkins)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

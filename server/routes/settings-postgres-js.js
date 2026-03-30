@@ -34,6 +34,30 @@ router.put('/', authenticateToken, requireAdmin, async (req, res) => {
           updated_at = CURRENT_TIMESTAMP
       `;
     }
+
+    // Restart monthly report scheduler if relevant settings changed
+    const schedulerKeys = ['monthly_report_enabled', 'monthly_report_day', 'monthly_report_time', 'monthly_report_timezone', 'monthly_report_callsign', 'arrl_section_email'];
+    const hasSchedulerChange = Object.keys(settings).some(k => schedulerKeys.includes(k));
+    if (hasSchedulerChange) {
+      try {
+        const { startScheduler } = require('../scheduler/monthlyReport');
+        await startScheduler();
+      } catch (e) {
+        console.error('Failed to restart scheduler:', e.message);
+      }
+    }
+
+    // Restart backup scheduler if relevant settings changed
+    const backupKeys = ['auto_backup_enabled', 'auto_backup_interval', 'auto_backup_s3_enabled'];
+    const hasBackupChange = Object.keys(settings).some(k => backupKeys.includes(k));
+    if (hasBackupChange) {
+      try {
+        const { startBackupScheduler } = require('../scheduler/backupScheduler');
+        await startBackupScheduler();
+      } catch (e) {
+        console.error('Failed to restart backup scheduler:', e.message);
+      }
+    }
     
     res.json({ success: true, message: 'Settings updated successfully' });
   } catch (error) {
@@ -111,7 +135,7 @@ router.post('/test-smtp', authenticateToken, requireAdmin, async (req, res) => {
       };
     }
     
-    const transporter = nodemailer.createTransporter(transportConfig);
+    const transporter = nodemailer.createTransport(transportConfig);
     
     // Verify connection
     await transporter.verify();
@@ -164,7 +188,7 @@ router.post('/send-test-email', authenticateToken, requireAdmin, async (req, res
       };
     }
     
-    const transporter = nodemailer.createTransporter(transportConfig);
+    const transporter = nodemailer.createTransport(transportConfig);
     
     const mailOptions = {
       from: `${settingsMap.smtp_from_name || 'NetControl'} <${settingsMap.smtp_from_email || settingsMap.smtp_username}>`,

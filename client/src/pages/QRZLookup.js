@@ -19,6 +19,7 @@ import {
 import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { formatDateLocal } from '../utils/dateUtils';
 
 const QRZLookup = () => {
   const [lookupResult, setLookupResult] = useState(null);
@@ -55,9 +56,10 @@ const QRZLookup = () => {
           return classMap[qrzClass] || qrzClass;
         };
         
-        // Map the license class for display
+        // Normalize field names and map the license class for display
         const mappedResult = {
           ...result,
+          callSign: result.callsign || result.callSign || '',
           licenseClass: mapLicenseClass(result.licenseClass)
         };
         
@@ -79,20 +81,17 @@ const QRZLookup = () => {
     }
   );
 
-  // Add operator mutation
+  // Add/update operator mutation
   const addOperatorMutation = useMutation(
-    (operatorData) => axios.post('/api/operators', operatorData),
+    (operatorData) => axios.post('/api/operators/upsert', operatorData),
     {
-      onSuccess: () => {
-        toast.success(`${lookupResult.callSign} added to operators database`);
+      onSuccess: (response) => {
+        const action = response.data.updated ? 'updated in' : 'added to';
+        toast.success(`${lookupResult.callSign} ${action} operators database`);
       },
       onError: (error) => {
         const message = error.response?.data?.error || 'Failed to add operator';
-        if (message.includes('already exists')) {
-          toast.error(`${lookupResult.callSign} is already in the operators database`);
-        } else {
-          toast.error(message);
-        }
+        toast.error(message);
       }
     }
   );
@@ -134,14 +133,16 @@ const QRZLookup = () => {
     };
     
     const operatorData = {
-      callSign: lookupResult.callSign,
+      call_sign: lookupResult.callSign,
       name: lookupResult.name || '',
-      street: lookupResult.address || '',
-      location: [lookupResult.city, lookupResult.state].filter(Boolean).join(', ') || '',
+      address: lookupResult.address || '',
+      city: lookupResult.city || '',
+      state: lookupResult.state || '',
+      zip: lookupResult.zip || '',
       email: lookupResult.email || '',
-      class: mapLicenseClassForOperator(lookupResult.licenseClass),
-      grid: lookupResult.grid || '',
-      comment: `Added from QRZ lookup on ${new Date().toLocaleDateString()}`
+      phone: lookupResult.phone || lookupResult.phoneCell || '',
+      license_class: mapLicenseClassForOperator(lookupResult.licenseClass),
+      notes: `Added from QRZ lookup on ${new Date().toLocaleDateString()}`
     };
     
     addOperatorMutation.mutate(operatorData);
@@ -157,11 +158,7 @@ const QRZLookup = () => {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString();
-    } catch {
-      return dateString;
-    }
+    return formatDateLocal(dateString);
   };
 
   return (

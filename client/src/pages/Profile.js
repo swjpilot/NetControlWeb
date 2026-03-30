@@ -16,6 +16,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { formatDateLocal } from '../utils/dateUtils';
 
 const Profile = () => {
   const { user, updateProfile, changePassword } = useAuth();
@@ -361,7 +362,7 @@ const Profile = () => {
                   <Calendar size={16} className="text-muted me-2" />
                   <strong>Member Since:</strong>
                   <span className="ms-2">
-                    {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
+                    {user?.created_at ? formatDateLocal(user.created_at) : 'Unknown'}
                   </span>
                 </div>
                 

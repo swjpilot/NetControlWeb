@@ -14,7 +14,11 @@ const fccRoutes = require('./routes/fcc-postgres-js');
 const qrzRoutes = require('./routes/qrz-postgres-js');
 const usersRoutes = require('./routes/users-postgres-js');
 const preCheckInRoutes = require('./routes/preCheckIn-postgres-js');
+const echolinkRoutes = require('./routes/echolink');
 const schedulesRoutes = require('./routes/schedules');
+const backupRoutes = require('./routes/backup');
+const { startScheduler } = require('./scheduler/monthlyReport');
+const { startBackupScheduler } = require('./scheduler/backupScheduler');
 
 const app = express();
 
@@ -31,6 +35,20 @@ const app = express();
     } catch (migrationError) {
       console.error('Migration warning:', migrationError.message);
       // Don't fail startup if migrations have issues
+    }
+
+    // Start the monthly report scheduler
+    try {
+      await startScheduler();
+    } catch (schedulerError) {
+      console.error('Scheduler warning:', schedulerError.message);
+    }
+
+    // Start the backup scheduler
+    try {
+      await startBackupScheduler();
+    } catch (backupError) {
+      console.error('Backup scheduler warning:', backupError.message);
     }
   } catch (error) {
     console.error('Database initialization failed:', error);
@@ -67,7 +85,9 @@ app.use('/api/fcc', fccRoutes);
 app.use('/api/qrz', qrzRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/pre-checkin', preCheckInRoutes);
+app.use('/api/echolink', echolinkRoutes);
 app.use('/api/schedules', schedulesRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Version endpoint
 app.get('/api/version', (req, res) => {

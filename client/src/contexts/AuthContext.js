@@ -127,6 +127,10 @@ export const AuthProvider = ({ children }) => {
     return user?.role === 'admin';
   };
 
+  const isReadonly = () => {
+    return user?.role === 'readonly';
+  };
+
   const isAuthenticated = () => {
     return !!user && !!token;
   };
@@ -144,6 +148,7 @@ export const AuthProvider = ({ children }) => {
     updateProfile,
     changePassword,
     isAdmin,
+    isReadonly,
     isAuthenticated,
     updateUser
   };

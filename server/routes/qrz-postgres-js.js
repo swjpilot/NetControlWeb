@@ -86,21 +86,40 @@ router.get('/lookup/:callsign', authenticateToken, async (req, res) => {
     }
     
     try {
-      const sessionKey = await getQRZSession();
+      let sessionKey = await getQRZSession();
       
       const lookupUrl = 'https://xmldata.qrz.com/xml/current/';
-      const lookupParams = {
+      let lookupParams = {
         s: sessionKey,
         callsign: callsign.toUpperCase()
       };
       
-      const response = await axios.get(lookupUrl, { 
+      let response = await axios.get(lookupUrl, { 
         params: lookupParams,
         timeout: 10000 
       });
       
-      const parser = new xml2js.Parser();
-      const result = await parser.parseStringPromise(response.data);
+      let parser = new xml2js.Parser();
+      let result = await parser.parseStringPromise(response.data);
+      
+      // Check for session error and retry with fresh session
+      if (result.QRZDatabase && result.QRZDatabase.Session && result.QRZDatabase.Session[0].Error) {
+        const error = result.QRZDatabase.Session[0].Error[0];
+        if (error.toLowerCase().includes('session') || error.toLowerCase().includes('invalid') || error.toLowerCase().includes('timeout')) {
+          console.log('QRZ session expired, refreshing...');
+          qrzSession = null;
+          qrzSessionExpiry = null;
+          sessionKey = await getQRZSession();
+          lookupParams.s = sessionKey;
+          
+          response = await axios.get(lookupUrl, { 
+            params: lookupParams,
+            timeout: 10000 
+          });
+          parser = new xml2js.Parser();
+          result = await parser.parseStringPromise(response.data);
+        }
+      }
       
       if (result.QRZDatabase && result.QRZDatabase.Callsign && result.QRZDatabase.Callsign[0]) {
         const callsignData = result.QRZDatabase.Callsign[0];
@@ -171,21 +190,40 @@ router.post('/import/:callsign', authenticateToken, async (req, res) => {
     }
     
     try {
-      const sessionKey = await getQRZSession();
+      let sessionKey = await getQRZSession();
       
       const lookupUrl = 'https://xmldata.qrz.com/xml/current/';
-      const lookupParams = {
+      let lookupParams = {
         s: sessionKey,
         callsign: callsign.toUpperCase()
       };
       
-      const response = await axios.get(lookupUrl, { 
+      let response = await axios.get(lookupUrl, { 
         params: lookupParams,
         timeout: 10000 
       });
       
-      const parser = new xml2js.Parser();
-      const result = await parser.parseStringPromise(response.data);
+      let parser = new xml2js.Parser();
+      let result = await parser.parseStringPromise(response.data);
+      
+      // Check for session error and retry with fresh session
+      if (result.QRZDatabase && result.QRZDatabase.Session && result.QRZDatabase.Session[0].Error) {
+        const error = result.QRZDatabase.Session[0].Error[0];
+        if (error.toLowerCase().includes('session') || error.toLowerCase().includes('invalid') || error.toLowerCase().includes('timeout')) {
+          console.log('QRZ session expired on import, refreshing...');
+          qrzSession = null;
+          qrzSessionExpiry = null;
+          sessionKey = await getQRZSession();
+          lookupParams.s = sessionKey;
+          
+          response = await axios.get(lookupUrl, { 
+            params: lookupParams,
+            timeout: 10000 
+          });
+          parser = new xml2js.Parser();
+          result = await parser.parseStringPromise(response.data);
+        }
+      }
       
       if (result.QRZDatabase && result.QRZDatabase.Callsign && result.QRZDatabase.Callsign[0]) {
         const callsignData = result.QRZDatabase.Callsign[0];

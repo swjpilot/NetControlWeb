@@ -384,6 +384,14 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Middleware to require write access (blocks readonly users)
+function requireWrite(req, res, next) {
+  if (req.user.role === 'readonly') {
+    return res.status(403).json({ error: 'Read-only users cannot perform this action' });
+  }
+  next();
+}
+
 // Change password (for forced password change or user-initiated)
 router.post('/change-password', authenticateToken, async (req, res) => {
   try {
@@ -440,6 +448,101 @@ router.post('/change-password', authenticateToken, async (req, res) => {
   }
 });
 
+// Forgot password - send reset email
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    // Find user by email
+    const users = await db.sql`SELECT id, username, email FROM users WHERE email = ${email} AND active = true`;
+    
+    // Always return success to prevent email enumeration
+    if (users.length === 0) {
+      return res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
+    }
+
+    const user = users[0];
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await db.sql`UPDATE users SET password_reset_token = ${token}, password_reset_expires = ${expires} WHERE id = ${user.id}`;
+
+    // Get SMTP settings and send email
+    const nodemailer = require('nodemailer');
+    const smtpSettings = await db.sql`SELECT key, value FROM settings WHERE key IN ('smtp_host', 'smtp_port', 'smtp_secure', 'smtp_starttls', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name', 'app_name')`;
+    const smtp = {};
+    smtpSettings.forEach(s => { smtp[s.key] = s.value; });
+
+    if (!smtp.smtp_host) {
+      console.error('Forgot password: SMTP not configured');
+      return res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
+    }
+
+    const transportConfig = {
+      host: smtp.smtp_host,
+      port: parseInt(smtp.smtp_port) || 587,
+      secure: smtp.smtp_secure === 'true'
+    };
+    if (smtp.smtp_starttls === 'true') transportConfig.requireTLS = true;
+    if (smtp.smtp_no_auth !== 'true') {
+      transportConfig.auth = { user: smtp.smtp_username, pass: smtp.smtp_password };
+    }
+
+    const transporter = nodemailer.createTransport(transportConfig);
+
+    // Build reset URL
+    const host = req.headers.host || 'localhost';
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const resetUrl = protocol + '://' + host + '/reset-password?token=' + token;
+    const appName = smtp.app_name || 'NetControl';
+
+    await transporter.sendMail({
+      from: (smtp.smtp_from_name || appName) + ' <' + (smtp.smtp_from_email || smtp.smtp_username) + '>',
+      to: user.email,
+      subject: appName + ' - Password Reset',
+      html: '<h2>' + appName + ' Password Reset</h2>' +
+        '<p>Hello ' + (user.username || '') + ',</p>' +
+        '<p>A password reset was requested for your account. Click the link below to reset your password:</p>' +
+        '<p><a href="' + resetUrl + '" style="display:inline-block;padding:10px 20px;background:#0d6efd;color:#fff;text-decoration:none;border-radius:4px">Reset Password</a></p>' +
+        '<p>This link expires in 1 hour.</p>' +
+        '<p>If you did not request this, you can safely ignore this email.</p>'
+    });
+
+    res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    // Still return success to prevent enumeration
+    res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
+  }
+});
+
+// Reset password with token
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ error: 'Token and new password are required' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const users = await db.sql`SELECT id, username FROM users WHERE password_reset_token = ${token} AND password_reset_expires > NOW() AND active = true`;
+    if (users.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const user = users[0];
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await db.sql`UPDATE users SET password_hash = ${passwordHash}, password_reset_token = NULL, password_reset_expires = NULL, force_password_change = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ${user.id}`;
+
+    res.json({ success: true, message: 'Password has been reset. You can now log in.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;
 module.exports.authenticateToken = authenticateToken;
 module.exports.requireAdmin = requireAdmin;
+module.exports.requireWrite = requireWrite;

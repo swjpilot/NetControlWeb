@@ -21,6 +21,7 @@ import QRZLookup from './pages/QRZLookup';
 import Operators from './pages/Operators';
 import Sessions from './pages/Sessions';
 import SessionDetail from './pages/SessionDetail';
+import QuickSession from './pages/QuickSession';
 import Reports from './pages/Reports';
 import NetSchedules from './pages/NetSchedules';
 import Profile from './pages/Profile';
@@ -66,6 +67,7 @@ function App() {
                           <Route path="/" element={<Dashboard />} />
                           <Route path="/profile" element={<Profile />} />
                           <Route path="/sessions" element={<Sessions />} />
+                          <Route path="/sessions/quick" element={<QuickSession />} />
                           <Route path="/sessions/:id" element={<SessionDetail />} />
                           <Route path="/schedules" element={<NetSchedules />} />
                           <Route path="/reports" element={<Reports />} />

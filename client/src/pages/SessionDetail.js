@@ -21,12 +21,18 @@ import {
   X,
   MapPin,
   Download,
-  FileText
+  FileText,
+  RefreshCw,
+  Headphones,
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useSettings } from '../contexts/SettingsContext';
+import { formatDateLocal, parseDateLocal } from '../utils/dateUtils';
+import { getAppTimezone } from '../utils/dateUtils';
 
 const SessionDetail = () => {
   const { id } = useParams();
@@ -44,8 +50,15 @@ const SessionDetail = () => {
   const [preCheckInData, setPreCheckInData] = useState(null);
   const [selectedPreCheckIns, setSelectedPreCheckIns] = useState(new Set());
   const [showManualEntry, setShowManualEntry] = useState(false);
-  const [participantSort, setParticipantSort] = useState({ field: 'check_in_time', direction: 'asc' });
+  const [showEcholink, setShowEcholink] = useState(false);
+  const [echolinkData, setEcholinkData] = useState(null);
+  const [selectedEcholinks, setSelectedEcholinks] = useState(new Set());
+  const [participantSort, setParticipantSort] = useState({ field: 'check_in_time', direction: 'desc' });
   const [showNetScript, setShowNetScript] = useState(false);
+  const [editingPreferredName, setEditingPreferredName] = useState(null);
+  const [preferredNameValue, setPreferredNameValue] = useState('');
+  const [groupAck, setGroupAck] = useState({1: false, 2: false, 3: false, 4: false, 5: false, 6: false});
+  const [participantSearch, setParticipantSearch] = useState('');
   const { getSetting } = useSettings();
 
   // Fetch tomorrow's scheduled net for script variables
@@ -103,6 +116,17 @@ const SessionDetail = () => {
     () => axios.get('/api/operators?limit=1000').then(res => res.data.operators)
   );
 
+  // Inline echolink auto-refresh (every 30 seconds, only when participant form is open)
+  const { data: inlineEcholinkData, isFetching: inlineEcholinkFetching } = useQuery(
+    'inline-echolink',
+    () => axios.get('/api/echolink').then(res => res.data),
+    {
+      enabled: showAddParticipant,
+      refetchInterval: 30000,
+      refetchIntervalInBackground: false
+    }
+  );
+
   const operators = useMemo(() => operatorsData || [], [operatorsData]);
 
   // Sorted participants list
@@ -155,10 +179,9 @@ const SessionDetail = () => {
     const template = getSetting('net_script_template', '');
     if (!template || !sessionData) return '';
     
-    const sessionDate = new Date(sessionData.session_date);
-    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+    const localDate = parseDateLocal(sessionData.session_date);
     
-    // Look up net controller's city from operators list
+    // Look up net controller's city from operators list using the session's actual net control call
     const ncOperator = operators.find(op => 
       op.call_sign?.toUpperCase() === (sessionData.net_control_call || '').toUpperCase()
     );
@@ -174,19 +197,27 @@ const SessionDetail = () => {
       '{FULLNAME}': sessionData.net_control_name || '',
       '{CALLSIGN}': sessionData.net_control_call || '',
       '{CITY}': ncOperator?.city || '',
-      '{DATE}': localDate.toLocaleDateString(),
-      '{DAY_OF_WEEK}': localDate.toLocaleDateString('en-US', { weekday: 'long' }),
-      '{STARTING_GROUP}': (() => {
-        const dayMap = {
-          0: 'Alpha – Delta',
-          1: 'Echo – Hotel',
-          2: 'India – Lima',
-          3: 'Mike – Papa',
-          4: 'Quebec – Tango',
-          5: 'Uniform – Zulu',
-          6: 'Alpha – Delta',
-        };
-        return dayMap[localDate.getDay()] || '';
+      '{STATE}': ncOperator?.state || '',
+      '{LOCATION}': ncOperator?.location || [ncOperator?.city, ncOperator?.state].filter(Boolean).join(', ') || '',
+      '{DATE}': formatDateLocal(sessionData.session_date),
+      '{DAY_OF_WEEK}': (() => {
+        const tz = getAppTimezone();
+        return localDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+      })(),
+      // Group rotation: 6 groups rotate by day of week
+      // {STARTING_GROUP} = first group, {GROUP_1}..{GROUP_6} = all positions in order
+      ...(() => {
+        const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+        const tz = getAppTimezone();
+        const dayName = localDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+        const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+        const startIdx = dayStartIndex[dayName] || 0;
+        const result = {};
+        for (let i = 0; i < 6; i++) {
+          result[`{GROUP_${i + 1}}`] = groups[(startIdx + i) % 6];
+        }
+        result['{STARTING_GROUP}'] = result['{GROUP_1}'];
+        return result;
       })(),
       '{TOMORROW_FIRSTNAME}': tomorrowFirstName,
       '{TOMORROW_CALLSIGN}': tomorrowCallSign,
@@ -249,12 +280,35 @@ const SessionDetail = () => {
         
         toast.success(`Found information for ${mappedData.callsign}`);
       },
-      onError: (error) => {
+      onError: async (error) => {
         const message = error.response?.data?.error || 'QRZ lookup failed';
-        toast.error(message);
         setQrzLookupData(null);
         
-        // Show manual entry form if QRZ lookup fails
+        // Try FCC database as fallback before showing manual entry
+        try {
+          const fccResponse = await axios.get(`/api/fcc/search/${callSignInput.toUpperCase()}`);
+          if (fccResponse.data && fccResponse.data.callsign) {
+            const fccData = fccResponse.data;
+            const mappedData = {
+              callsign: fccData.callsign || fccData.call_sign,
+              name: [fccData.first_name, fccData.last_name].filter(Boolean).join(' ') || fccData.name,
+              city: fccData.city,
+              state: fccData.state,
+              licenseClass: fccData.license_class || fccData.radio_service_desc,
+              grid: fccData.grid_square,
+              email: ''
+            };
+            setQrzLookupData(mappedData);
+            participantForm.setValue('call_sign', mappedData.callsign);
+            toast.success(`Found ${mappedData.callsign} in FCC database`);
+            return;
+          }
+        } catch (fccError) {
+          // FCC lookup also failed
+        }
+        
+        // Both QRZ and FCC failed — show manual entry
+        toast.error(message + ' (FCC lookup also failed)');
         setShowManualEntry(true);
         setManualEntryData({
           name: '',
@@ -271,7 +325,7 @@ const SessionDetail = () => {
     if (callSignInput.length >= 2) {
       const filtered = operators.filter(op => 
         op.call_sign.toUpperCase().includes(callSignInput.toUpperCase())
-      ).slice(0, 10); // Limit to 10 suggestions
+      ).slice(0, 5); // Limit to 5 suggestions
       setFilteredOperators(filtered);
       setShowSuggestions(filtered.length > 0);
     } else {
@@ -367,6 +421,7 @@ const SessionDetail = () => {
         setQrzLookupData(null); // Clear QRZ data
         setSelectedOperator(null); // Clear selected operator
         setCallSignInput(''); // Clear input
+        setShowManualEntry(false); // Hide manual entry form
         
         // Keep the form open - don't set setShowAddParticipant(false)
         // Focus back to the call sign input for quick entry
@@ -405,6 +460,21 @@ const SessionDetail = () => {
       }
     }
   );
+
+  // Patch participant (lightweight: acknowledged, preferred_name)
+  const patchParticipantMutation = useMutation(
+    ({ participantId, data }) =>
+      axios.patch(`/api/sessions/${id}/participants/${participantId}`, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['session', id]);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update');
+      }
+    }
+  );
+
 
   // Remove participant mutation
   const removeParticipantMutation = useMutation(
@@ -585,22 +655,23 @@ const SessionDetail = () => {
         queryClient.invalidateQueries(['session', id]);
         queryClient.invalidateQueries('operators-list');
         
-        const { processed, errors, results } = response.data;
+        const { processed, errors, results, skipped } = response.data;
+        const skippedCount = skipped?.length || 0;
         
         if (processed > 0) {
           const operatorsCreated = results.filter(r => r.operatorCreated).length;
           const qrzLookups = results.filter(r => r.hasQRZData).length;
           
-          let message = `Added ${processed} participants successfully`;
+          let message = `Added ${processed} new participants`;
+          if (skippedCount > 0) message += ` (${skippedCount} already in session)`;
           if (operatorsCreated > 0) {
-            message += ` (${operatorsCreated} new operators created`;
-            if (qrzLookups > 0) {
-              message += ` with QRZ data`;
-            }
-            message += `)`;
+            message += ` — ${operatorsCreated} new operators created`;
+            if (qrzLookups > 0) message += ` with QRZ data`;
           }
           
-          toast.success(message);
+          toast.success(message, { duration: 5000 });
+        } else if (skippedCount > 0) {
+          toast.success(`All ${skippedCount} pre-check-ins already in session — no new participants`, { duration: 4000 });
         }
         
         if (errors.length > 0) {
@@ -632,7 +703,7 @@ const SessionDetail = () => {
         queryClient.invalidateQueries(['session', id]);
         queryClient.invalidateQueries('operators-list');
         
-        const { results, errors } = response.data;
+        const { results, errors, skipped } = response.data;
         
         if (results.length > 0) {
           const result = results[0];
@@ -643,6 +714,8 @@ const SessionDetail = () => {
           }
           
           toast.success(message);
+        } else if (skipped?.length > 0) {
+          toast.success(`${skipped[0].callSign} already in session`);
         }
         
         if (errors.length > 0) {
@@ -656,13 +729,50 @@ const SessionDetail = () => {
     }
   );
 
+  // Fetch echolink logins mutation
+  const fetchEcholinkMutation = useMutation(
+    () => axios.get('/api/echolink'),
+    {
+      onSuccess: async (response) => {
+        const echolinkLogins = response.data.logins;
+
+        // Check which are already in the operators database
+        const enrichedLogins = echolinkLogins.map((login) => {
+          const existingOperator = operators.find(op =>
+            op.call_sign?.toUpperCase() === login.callSign.toUpperCase()
+          );
+          return {
+            ...login,
+            hasOperatorRecord: !!existingOperator,
+            operatorInfo: existingOperator
+          };
+        });
+
+        setEcholinkData({
+          ...response.data,
+          logins: enrichedLogins
+        });
+        setShowEcholink(true);
+
+        toast.success(`Found ${enrichedLogins.length} echolink logins`);
+      },
+      onError: (error) => {
+        console.error('Failed to fetch echolink logins:', error);
+        toast.error(error.response?.data?.error || 'Failed to fetch echolink logins');
+      }
+    }
+  );
+
   // Submit net report mutation
   const submitNetReportMutation = useMutation(
     () => axios.post(`/api/sessions/${id}/submit-net-report`),
     {
       onSuccess: (response) => {
-        const data = response.data.data;
-        toast.success(`Net report submitted: ${data.callSign} - ${data.checkins} check-ins, ${data.traffic} traffic`);
+        const { data: submittedData, response_body, response_status } = response.data;
+        // Show the external service response in a longer-lasting toast
+        const summary = `${submittedData.callSign} — ${submittedData.checkins} check-ins, ${submittedData.traffic} traffic`;
+        const serverResponse = response_body ? `\nServer response (${response_status}): ${response_body.substring(0, 200)}` : '';
+        toast.success(`Net report submitted: ${summary}${serverResponse}`, { duration: 8000 });
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to submit net report');
@@ -725,6 +835,15 @@ const SessionDetail = () => {
     
     console.log('Adding participant directly:', participantData);
     if (editingParticipant) {
+      // If preferred_name changed and participant has an operator, update the operator record
+      const newPreferredName = data.preferred_name;
+      if (editingParticipant.operator_id && newPreferredName !== undefined) {
+        axios.patch(`/api/operators/${editingParticipant.operator_id}/preferred-name`, {
+          preferred_name: newPreferredName || null
+        }).then(() => {
+          queryClient.invalidateQueries('operators-list');
+        }).catch(err => console.error('Failed to update preferred name:', err));
+      }
       updateParticipantMutation.mutate({
         participantId: editingParticipant.id,
         participantData
@@ -764,6 +883,7 @@ const SessionDetail = () => {
     // Set form values
     participantForm.setValue('operator_id', participant.operator_id || '');
     participantForm.setValue('call_sign', participant.call_sign || '');
+    participantForm.setValue('preferred_name', participant.operator_preferred_name || '');
     participantForm.setValue('check_in_time', participant.check_in_time || '');
     participantForm.setValue('check_out_time', participant.check_out_time || '');
     participantForm.setValue('notes', participant.notes || '');
@@ -773,6 +893,35 @@ const SessionDetail = () => {
   const handleRemoveParticipant = (participant) => {
     if (window.confirm(`Remove ${participant.call_sign || participant.operator_call} from this session?`)) {
       removeParticipantMutation.mutate(participant.id);
+    }
+  };
+
+  const handleToggleAcknowledged = (participant) => {
+    patchParticipantMutation.mutate({
+      participantId: participant.id,
+      data: { acknowledged: !participant.acknowledged }
+    });
+  };
+
+  const handlePreferredNameEdit = (participant) => {
+    setEditingPreferredName(participant.id);
+    setPreferredNameValue(participant.operator_preferred_name || '');
+  };
+
+  const handlePreferredNameSave = (participant) => {
+    patchParticipantMutation.mutate({
+      participantId: participant.id,
+      data: { preferred_name: preferredNameValue }
+    });
+    setEditingPreferredName(null);
+  };
+
+  const handlePreferredNameKeyDown = (e, participant) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handlePreferredNameSave(participant);
+    } else if (e.key === 'Escape') {
+      setEditingPreferredName(null);
     }
   };
 
@@ -832,7 +981,32 @@ const SessionDetail = () => {
     participantForm.setValue('operator_id', '');
   };
 
+  // Quick-add helper: select operator and immediately add as participant
+  const quickAddOperator = (operator) => {
+    const { flags } = parseCallSignFlags(callSignInput.trim());
+    const formData = {
+      operator_id: operator.id,
+      call_sign: operator.call_sign,
+      check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
+      check_out_time: participantForm.getValues('check_out_time') || '',
+      notes: participantForm.getValues('notes') || '',
+      ...flags
+    };
+    handleOperatorSelect(operator);
+    onSubmitParticipant(formData);
+  };
+
   const handleCallSignKeyDown = (e) => {
+    // Ctrl+1 through Ctrl+5: select corresponding suggestion
+    if (e.ctrlKey && e.key >= '1' && e.key <= '5') {
+      e.preventDefault();
+      const index = parseInt(e.key) - 1;
+      if (filteredOperators[index]) {
+        quickAddOperator(filteredOperators[index]);
+      }
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       
@@ -845,8 +1019,14 @@ const SessionDetail = () => {
         toast.error('Please enter a call sign');
         return;
       }
+
+      // If exactly one suggestion matches, quick-add it
+      if (filteredOperators.length === 1) {
+        quickAddOperator(filteredOperators[0]);
+        return;
+      }
       
-      // Check if this call sign exists in operators database
+      // Check if this call sign exists in operators database (exact match)
       const existingOperator = operators.find(op => 
         op.call_sign.toUpperCase() === callSign.toUpperCase()
       );
@@ -1032,10 +1212,13 @@ const SessionDetail = () => {
   };
 
   const handleSelectAllPreCheckIn = () => {
-    if (selectedPreCheckIns.size === preCheckInData?.participants.length) {
+    const notInSession = preCheckInData?.participants.filter(p => 
+      !sessionData?.participants?.some(sp => sp.call_sign?.toUpperCase() === p.callSign?.toUpperCase())
+    ) || [];
+    if (selectedPreCheckIns.size === notInSession.length && notInSession.length > 0) {
       setSelectedPreCheckIns(new Set());
     } else {
-      setSelectedPreCheckIns(new Set(preCheckInData?.participants.map(p => p.callSign)));
+      setSelectedPreCheckIns(new Set(notInSession.map(p => p.callSign)));
     }
   };
 
@@ -1054,6 +1237,61 @@ const SessionDetail = () => {
 
   const handleAddSinglePreCheckIn = (participant) => {
     addSinglePreCheckInMutation.mutate(participant);
+  };
+
+  const handleFetchEcholink = () => {
+    fetchEcholinkMutation.mutate();
+  };
+
+  const handleEcholinkSelect = (login, isSelected) => {
+    const newSelected = new Set(selectedEcholinks);
+    if (isSelected) {
+      newSelected.add(login.callSign);
+    } else {
+      newSelected.delete(login.callSign);
+    }
+    setSelectedEcholinks(newSelected);
+  };
+
+  const handleSelectAllEcholink = () => {
+    if (selectedEcholinks.size === echolinkData?.logins.length) {
+      setSelectedEcholinks(new Set());
+    } else {
+      setSelectedEcholinks(new Set(echolinkData?.logins.map(l => l.callSign)));
+    }
+  };
+
+  const handleAddSelectedEcholink = () => {
+    if (selectedEcholinks.size === 0) {
+      toast.error('Please select logins to add');
+      return;
+    }
+
+    // Convert echolink logins to the pre-check-in format so we can reuse the process endpoint
+    // Set flag_echolink since these are echolink connections
+    const selectedLogins = echolinkData.logins
+      .filter(l => selectedEcholinks.has(l.callSign))
+      .map(l => ({
+        callSign: l.callSign,
+        firstName: l.name || '',
+        location: '',
+        announce: '',
+        flag_echolink: true
+      }));
+
+    addMultipleParticipantsMutation.mutate(selectedLogins);
+    setShowEcholink(false);
+    setSelectedEcholinks(new Set());
+  };
+
+  const handleAddSingleEcholink = (login) => {
+    addSinglePreCheckInMutation.mutate({
+      callSign: login.callSign,
+      firstName: login.name || '',
+      location: '',
+      announce: '',
+      flag_echolink: true
+    });
   };
 
   const handleManualEntryChange = (field, value) => {
@@ -1171,8 +1409,29 @@ const SessionDetail = () => {
   };
 
   const getCurrentTime = () => {
-    return new Date().toTimeString().slice(0, 5);
+    return new Date().toTimeString().slice(0, 8);
   };
+
+  // Update check-in time in real time when the add participant form is open
+  useEffect(() => {
+    if (!showAddParticipant || editingParticipant) return;
+    const interval = setInterval(() => {
+      const currentVal = participantForm.getValues('check_in_time');
+      // Only auto-update if the user hasn't manually changed it away from a recent time
+      if (currentVal) {
+        const now = new Date();
+        const parts = currentVal.split(':');
+        const fieldTime = new Date();
+        fieldTime.setHours(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2] || 0));
+        const diff = Math.abs(now - fieldTime);
+        // Only update if within 2 seconds of current time (user hasn't manually edited)
+        if (diff < 2000) {
+          participantForm.setValue('check_in_time', now.toTimeString().slice(0, 8));
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showAddParticipant, editingParticipant, participantForm]);
 
   // Parse /flags from call sign input (e.g., "W1AW/C/T" -> callSign: "W1AW", flags)
   const parseCallSignFlags = (input) => {
@@ -1238,14 +1497,10 @@ const SessionDetail = () => {
           <div>
             <h1>
               <Calendar size={24} className="me-2" />
-              Session: {(() => {
-                const sessionDate = new Date(sessionData.session_date);
-                const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
-                return localDate.toLocaleDateString();
-              })()}
+              Session: {formatDateLocal(sessionData.session_date)}
             </h1>
             <p className="text-muted mb-0">
-              Net Control: {sessionData.net_control_call}
+              Net Control: <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/operators?search=${encodeURIComponent(sessionData.net_control_call)}`); }} style={{ textDecoration: 'none' }}>{sessionData.net_control_call}</a>
               {sessionData.net_control_name && ` (${sessionData.net_control_name})`}
             </p>
           </div>
@@ -1294,18 +1549,14 @@ const SessionDetail = () => {
                 <div className="info-item">
                   <Calendar size={16} className="text-muted me-2" />
                   <strong>Date:</strong>
-                  <span className="ms-2">{(() => {
-                    const sessionDate = new Date(sessionData.session_date);
-                    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
-                    return localDate.toLocaleDateString();
-                  })()}</span>
+                  <span className="ms-2">{formatDateLocal(sessionData.session_date)}</span>
                 </div>
                 
                 <div className="info-item">
                   <Radio size={16} className="text-muted me-2" />
                   <strong>Net Control:</strong>
                   <span className="ms-2">
-                    {sessionData.net_control_call}
+                    <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/operators?search=${encodeURIComponent(sessionData.net_control_call)}`); }} style={{ textDecoration: 'none' }}>{sessionData.net_control_call}</a>
                     {sessionData.net_control_name && ` (${sessionData.net_control_name})`}
                   </span>
                 </div>
@@ -1396,6 +1647,50 @@ const SessionDetail = () => {
             </h2>
             <div className="d-flex gap-2">
               <button
+                className="btn btn-outline-primary btn-sm"
+                title="Pop out to separate window"
+                onClick={() => {
+                  // Build group checklist HTML for the pop-out
+                  const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+                  const tz = getAppTimezone();
+                  const scriptDate = parseDateLocal(sessionData?.session_date);
+                  const dayName = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+                  const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+                  const startIdx = dayStartIndex[dayName] || 0;
+                  const checklistHtml = '<div style="padding:8px 0;display:flex;flex-wrap:wrap;gap:12px;align-items:center">' +
+                    [1,2,3,4,5,6].map(i => {
+                      const gName = groups[(startIdx + i - 1) % 6];
+                      return `<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.95rem"><input type="checkbox" style="width:16px;height:16px;cursor:pointer" onchange="var s=this.nextElementSibling;if(this.checked){s.style.textDecoration='line-through';s.style.opacity='0.5'}else{s.style.textDecoration='none';s.style.opacity='1'}"><span>${gName}</span></label>`;
+                    }).join('') + '</div>';
+
+                  let scriptHtml = processNetScript()
+                    .replace(/\{GROUP_CHECKLIST\}/g, checklistHtml)
+                    .replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>')
+                    .replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
+                  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                  const popout = window.open('', 'NetScript', 'width=700,height=800,scrollbars=yes,resizable=yes');
+                  if (popout) {
+                    // If script doesn't contain {GROUP_CHECKLIST}, append checklist at the end
+                    const hasInlineChecklist = processNetScript().includes('{GROUP_CHECKLIST}');
+                    const appendChecklist = hasInlineChecklist ? '' : `<div style="margin-top:16px;padding-top:12px;border-top:1px solid ${isDark ? '#30363d' : '#ddd'}">${checklistHtml}</div>`;
+                    popout.document.write(`<!DOCTYPE html><html><head><title>Net Script - ${sessionData?.net_control_call || ''} ${formatDateLocal(sessionData?.session_date)}</title>
+                      <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 1.05rem; line-height: 1.8; padding: 24px; margin: 0;
+                          background: ${isDark ? '#0d1117' : '#fff'}; color: ${isDark ? '#c9d1d9' : '#1a1a1a'}; }
+                        pre { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; }
+                        h1 { font-size: 1.2rem; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid ${isDark ? '#30363d' : '#ddd'}; }
+                        @media print { body { background: #fff; color: #000; } }
+                      </style></head><body>
+                      <h1>Net Script — ${sessionData?.net_control_call || ''} — ${formatDateLocal(sessionData?.session_date)}</h1>
+                      <pre>${scriptHtml}</pre>${appendChecklist}</body></html>`);
+                    popout.document.close();
+                  }
+                }}
+              >
+                <ExternalLink size={14} />
+                Pop Out
+              </button>
+              <button
                 className="btn btn-outline-secondary btn-sm"
                 onClick={() => {
                   navigator.clipboard.writeText(processNetScript().replace(/\[i\]/g, '').replace(/\[\/i\]/g, '').replace(/\[b\]/g, '').replace(/\[\/b\]/g, ''));
@@ -1410,17 +1705,63 @@ const SessionDetail = () => {
             </div>
           </div>
           <div className="card-body">
-            <pre style={{ 
-              whiteSpace: 'pre-wrap', 
-              wordWrap: 'break-word', 
-              fontFamily: 'inherit',
-              fontSize: '1.05rem',
-              lineHeight: '1.8',
-              margin: 0,
-              color: 'inherit'
-            }}
-              dangerouslySetInnerHTML={{ __html: processNetScript().replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>').replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>') }}
-            />
+            {(() => {
+              const scriptText = processNetScript();
+              const formatHtml = (text) => text.replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>').replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
+              const preStyle = { whiteSpace: 'pre-wrap', wordWrap: 'break-word', fontFamily: 'inherit', fontSize: '1.05rem', lineHeight: '1.8', margin: 0, color: 'inherit' };
+
+              // Build the group checklist component
+              const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+              const tz = getAppTimezone();
+              const scriptDate = parseDateLocal(sessionData?.session_date);
+              const dayName = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+              const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+              const startIdx = dayStartIndex[dayName] || 0;
+
+              const GroupChecklist = () => (
+                <div style={{ padding: '8px 0', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+                  {[1,2,3,4,5,6].map(i => {
+                    const groupName = groups[(startIdx + i - 1) % 6];
+                    return (
+                      <label key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.95rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={groupAck[i] || false}
+                          onChange={() => setGroupAck(prev => ({ ...prev, [i]: !prev[i] }))}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                        />
+                        <span style={{ textDecoration: groupAck[i] ? 'line-through' : 'none', opacity: groupAck[i] ? 0.5 : 1 }}>
+                          {groupName}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+
+              if (scriptText.includes('{GROUP_CHECKLIST}')) {
+                const parts = scriptText.split('{GROUP_CHECKLIST}');
+                return (
+                  <>
+                    {parts.map((part, idx) => (
+                      <React.Fragment key={idx}>
+                        <pre style={preStyle} dangerouslySetInnerHTML={{ __html: formatHtml(part) }} />
+                        {idx < parts.length - 1 && <GroupChecklist />}
+                      </React.Fragment>
+                    ))}
+                  </>
+                );
+              } else {
+                return (
+                  <>
+                    <pre style={preStyle} dangerouslySetInnerHTML={{ __html: formatHtml(scriptText) }} />
+                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-color, #dee2e6)' }}>
+                      <GroupChecklist />
+                    </div>
+                  </>
+                );
+              }
+            })()}
           </div>
         </div>
       )}
@@ -1475,6 +1816,23 @@ const SessionDetail = () => {
                     )}
                   </button>
                   <button 
+                    className="btn btn-outline-success"
+                    onClick={handleFetchEcholink}
+                    disabled={fetchEcholinkMutation.isLoading}
+                  >
+                    {fetchEcholinkMutation.isLoading ? (
+                      <>
+                        <Loader size={16} className="animate-spin me-2" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Radio size={16} className="me-2" />
+                        Echolink Logins
+                      </>
+                    )}
+                  </button>
+                  <button 
                     className="btn btn-primary"
                     onClick={() => {
                       setShowAddParticipant(true);
@@ -1501,6 +1859,8 @@ const SessionDetail = () => {
 
               {/* Add/Edit Participant Form */}
               {showAddParticipant && (
+                <div className="row">
+                <div className="col-md-8">
                 <div className="card mb-4">
                   <div className="card-header">
                     <h4>{editingParticipant ? 'Edit Participant' : 'Add Participant'}</h4>
@@ -1553,23 +1913,26 @@ const SessionDetail = () => {
                           {/* Autocomplete Suggestions */}
                           {showSuggestions && filteredOperators.length > 0 && (
                             <div className="autocomplete-suggestions">
-                              {filteredOperators.map(operator => (
+                              {filteredOperators.map((operator, index) => (
                                 <div
                                   key={operator.id}
                                   className="autocomplete-suggestion"
-                                  onClick={() => handleOperatorSelect(operator)}
+                                  onClick={() => quickAddOperator(operator)}
                                 >
-                                  <div className="d-flex align-items-center">
-                                    <Radio size={14} className="text-primary me-2" />
-                                    <div>
-                                      <strong>{operator.call_sign}</strong>
-                                      {operator.name && (
-                                        <span className="text-muted ms-2">- {operator.name}</span>
-                                      )}
-                                      {operator.location && (
-                                        <div className="small text-muted">{operator.location}</div>
-                                      )}
+                                  <div className="d-flex align-items-center justify-content-between">
+                                    <div className="d-flex align-items-center">
+                                      <Radio size={14} className="text-primary me-2" />
+                                      <div>
+                                        <strong>{operator.call_sign}</strong>
+                                        {operator.name && (
+                                          <span className="text-muted ms-2">- {operator.name}</span>
+                                        )}
+                                        {operator.location && (
+                                          <div className="small text-muted">{operator.location}</div>
+                                        )}
+                                      </div>
                                     </div>
+                                    <span className="badge bg-secondary ms-2" style={{ fontSize: '0.65rem', opacity: 0.7 }}>Ctrl+{index + 1}</span>
                                   </div>
                                 </div>
                               ))}
@@ -1704,7 +2067,7 @@ const SessionDetail = () => {
                             <div className="flex-grow-1">
                               <h6 className="mb-2">
                                 <User size={16} className="me-2" />
-                                Manual Entry for {callSignInput}
+                                {'Manual Entry for '}{callSignInput.toUpperCase()}
                               </h6>
                               <div className="small text-muted mb-3">
                                 QRZ lookup failed. You can enter operator information manually or skip to add just the call sign.
@@ -1791,11 +2154,26 @@ const SessionDetail = () => {
                         </div>
                       )}
 
+                      {/* Preferred Name - editable, updates operator record */}
+                      {editingParticipant && editingParticipant.operator_id && (
+                        <div className="form-group">
+                          <label className="form-label">Preferred First Name</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="e.g., Bob, Jim, etc."
+                            {...participantForm.register('preferred_name')}
+                          />
+                          <div className="form-text">Updates the operator's preferred name for future sessions</div>
+                        </div>
+                      )}
+
                       <div className="form-row">
                         <div className="form-group">
                           <label className="form-label">Check-in Time</label>
                           <input
                             type="time"
+                            step="1"
                             className="form-control"
                             defaultValue={getCurrentTime()}
                             {...participantForm.register('check_in_time')}
@@ -1928,14 +2306,85 @@ const SessionDetail = () => {
                     </form>
                   </div>
                 </div>
+                </div>
+                <div className="col-md-4">
+                  <div className="card mb-4">
+                    <div className="card-header">
+                      <h4 style={{ fontSize: '1.1rem' }}>
+                        <Headphones size={16} className="me-2" />
+                        Echolink
+                      </h4>
+                      <button
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => queryClient.invalidateQueries('inline-echolink')}
+                        disabled={inlineEcholinkFetching}
+                        title="Refresh"
+                      >
+                        <RefreshCw size={14} className={inlineEcholinkFetching ? 'animate-spin' : ''} />
+                      </button>
+                    </div>
+                    <div className="card-body" style={{ maxHeight: 400, overflowY: 'auto', padding: '0.75rem' }}>
+                      {inlineEcholinkData?.logins?.length > 0 ? (
+                        <div className="list-group list-group-flush">
+                          {inlineEcholinkData.logins.map((login) => (
+                            <div key={login.callSign} className="list-group-item d-flex justify-content-between align-items-center" style={{ padding: '0.4rem 0.5rem' }}>
+                              <div>
+                                <strong style={{ fontSize: '0.85rem' }}>{login.callSign}</strong>
+                                {login.name && <div className="small text-muted">{login.name}</div>}
+                              </div>
+                              <button
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={() => handleAddSingleEcholink(login)}
+                                disabled={addSinglePreCheckInMutation.isLoading}
+                                title="Add to session"
+                              >
+                                <UserPlus size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-3 text-muted">
+                          <Headphones size={24} className="mb-2" />
+                          <div className="small">No stations connected</div>
+                        </div>
+                      )}
+                    </div>
+                    {inlineEcholinkData?.logins?.length > 0 && (
+                      <div className="card-footer" style={{ padding: '0.5rem 0.75rem' }}>
+                        <small className="text-muted">{inlineEcholinkData.logins.length} connected &bull; auto-refreshes every 30s</small>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                </div>
               )}
 
               {/* Participants List */}
               {sessionData.participants && sessionData.participants.length > 0 ? (
+                <div>
+                  <div className="mb-2">
+                    <div className="input-group input-group-sm" style={{ maxWidth: '300px' }}>
+                      <span className="input-group-text"><Search size={14} /></span>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search participants..."
+                        value={participantSearch}
+                        onChange={(e) => setParticipantSearch(e.target.value)}
+                      />
+                      {participantSearch && (
+                        <button className="btn btn-outline-secondary" onClick={() => setParticipantSearch('')}>
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 <div className="table-container">
                   <table className="table">
                     <thead>
                       <tr>
+                        <th width="40">Ack</th>
                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleParticipantSort('call_sign')}>
                           Call Sign <SortIndicator field="call_sign" />
                         </th>
@@ -1955,7 +2404,18 @@ const SessionDetail = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedParticipants.map((participant) => (
+                      {sortedParticipants.filter(p => {
+                        if (!participantSearch) return true;
+                        const term = participantSearch.toLowerCase();
+                        return (
+                          (p.call_sign || '').toLowerCase().includes(term) ||
+                          (p.display_call_sign || '').toLowerCase().includes(term) ||
+                          (p.display_name || p.operator_name || p.name || '').toLowerCase().includes(term) ||
+                          (p.operator_preferred_name || '').toLowerCase().includes(term) ||
+                          (p.display_location || '').toLowerCase().includes(term) ||
+                          (p.notes || '').toLowerCase().includes(term)
+                        );
+                      }).map((participant) => (
                         <tr 
                           key={participant.id}
                           style={{ cursor: 'pointer' }}
@@ -1967,6 +2427,15 @@ const SessionDetail = () => {
                           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
                           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
                         >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={participant.acknowledged || false}
+                              onChange={() => handleToggleAcknowledged(participant)}
+                              title={participant.acknowledged ? 'Acknowledged' : 'Not acknowledged'}
+                              style={{ cursor: 'pointer', width: 18, height: 18 }}
+                            />
+                          </td>
                           <td>
                             <div className="d-flex align-items-center">
                               <Radio size={16} className="text-primary me-2" />
@@ -1975,12 +2444,30 @@ const SessionDetail = () => {
                               </strong>
                             </div>
                           </td>
-                          <td>
-                            {(participant.display_name || participant.operator_name) && (
-                              <div className="d-flex align-items-center">
-                                <User size={14} className="text-muted me-1" />
-                                {participant.display_name || participant.operator_name}
+                          <td onClick={(e) => e.stopPropagation()}>
+                            {editingPreferredName === participant.id ? (
+                              <div className="d-flex align-items-center gap-1">
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={preferredNameValue}
+                                  onChange={(e) => setPreferredNameValue(e.target.value)}
+                                  onKeyDown={(e) => handlePreferredNameKeyDown(e, participant)}
+                                  onBlur={() => handlePreferredNameSave(participant)}
+                                  autoFocus
+                                  placeholder="Preferred name"
+                                  style={{ width: 120 }}
+                                />
                               </div>
+                            ) : (
+                              (participant.display_name || participant.operator_name) ? (
+                                <div className="d-flex align-items-center" style={{ cursor: 'pointer' }} onClick={() => participant.operator_id && handlePreferredNameEdit(participant)} title={participant.operator_id ? 'Click to edit preferred name' : ''}>
+                                  <User size={14} className="text-muted me-1" />
+                                  {participant.operator_preferred_name ? (
+                                    <><span className="text-primary">{participant.operator_preferred_name}</span> <span className="text-muted small">({participant.display_name || participant.operator_name})</span></>
+                                  ) : (participant.display_name || participant.operator_name)}
+                                </div>
+                              ) : null
                             )}
                           </td>
                           <td>
@@ -2042,6 +2529,7 @@ const SessionDetail = () => {
                       ))}
                     </tbody>
                   </table>
+                </div>
                 </div>
               ) : (
                 <div className="text-center py-4">
@@ -2453,12 +2941,173 @@ const SessionDetail = () => {
         </div>
       </div>
 
-      {/* Pre-Check-In Modal */}
-      {showPreCheckIn && (
-        <div className="modal-overlay" onClick={() => setShowPreCheckIn(false)}>
+      {/* Echolink Logins Modal */}
+      {showEcholink && (
+        <div className="modal-overlay" onClick={() => setShowEcholink(false)}>
           <div className="modal-dialog modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-content">
               <div className="modal-header">
+                <h4 className="modal-title">
+                  <Radio size={20} className="me-2" />
+                  Echolink Logins
+                </h4>
+                <button 
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setShowEcholink(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              
+              <div className="modal-body">
+                {echolinkData && (
+                  <>
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                      <div>
+                        <p className="mb-1">
+                          <strong>{echolinkData.logins.length}</strong> stations connected via Echolink
+                        </p>
+                        <p className="small text-muted mb-0">
+                          Fetched: {new Date(echolinkData.fetchedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="d-flex gap-2">
+                        <button 
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={handleSelectAllEcholink}
+                        >
+                          <Square size={14} className="me-1" />
+                          {selectedEcholinks.size === echolinkData.logins.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-success"
+                          onClick={handleAddSelectedEcholink}
+                          disabled={selectedEcholinks.size === 0 || addMultipleParticipantsMutation.isLoading}
+                        >
+                          {addMultipleParticipantsMutation.isLoading ? (
+                            <>
+                              <Loader size={14} className="animate-spin me-1" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={14} className="me-1" />
+                              Add Selected ({selectedEcholinks.size})
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="table-container">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th width="50">
+                              <input
+                                type="checkbox"
+                                checked={selectedEcholinks.size === echolinkData.logins.length && echolinkData.logins.length > 0}
+                                onChange={handleSelectAllEcholink}
+                              />
+                            </th>
+                            <th>Call Sign</th>
+                            <th>Name</th>
+                            <th>Connected Since</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {echolinkData.logins.map((login) => (
+                            <tr key={login.callSign}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedEcholinks.has(login.callSign)}
+                                  onChange={(e) => handleEcholinkSelect(login, e.target.checked)}
+                                />
+                              </td>
+                              <td>
+                                <div className="d-flex align-items-center">
+                                  <Radio size={14} className="text-success me-2" />
+                                  <div>
+                                    <strong>{login.callSign}</strong>
+                                    {!login.hasOperatorRecord && (
+                                      <div className="small text-info">
+                                        <Search size={10} className="me-1" />
+                                        Will lookup QRZ
+                                      </div>
+                                    )}
+                                    {login.hasOperatorRecord && (
+                                      <div className="small text-success">
+                                        <User size={10} className="me-1" />
+                                        In database
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{login.name}</td>
+                              <td>
+                                <div className="small text-muted">
+                                  <Clock size={12} className="me-1" />
+                                  {login.connectedSince}
+                                </div>
+                              </td>
+                              <td>
+                                <span className="badge bg-success">Connected</span>
+                              </td>
+                              <td>
+                                <button 
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={() => handleAddSingleEcholink(login)}
+                                  disabled={addSinglePreCheckInMutation.isLoading}
+                                >
+                                  {addSinglePreCheckInMutation.isLoading ? (
+                                    <Loader size={12} className="animate-spin" />
+                                  ) : (
+                                    <>
+                                      <UserPlus size={12} className="me-1" />
+                                      Add
+                                    </>
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {echolinkData.logins.length === 0 && (
+                      <div className="text-center py-4">
+                        <Radio size={48} className="text-muted mb-3" />
+                        <p className="text-muted">No stations currently connected via Echolink</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              
+              <div className="modal-footer">
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setShowEcholink(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pre-Check-In Modal */}
+      {showPreCheckIn && (
+        <div className="modal-overlay" onClick={() => setShowPreCheckIn(false)}>
+          <div className="modal-dialog modal-lg" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-content" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h4 className="modal-title">
                   <User size={20} className="me-2" />
                   BRARS Pre-Check-In List
@@ -2471,7 +3120,7 @@ const SessionDetail = () => {
                 </button>
               </div>
               
-              <div className="modal-body">
+              <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
                 {preCheckInData && (
                   <>
                     <div className="d-flex justify-content-between align-items-center mb-3">
@@ -2530,13 +3179,18 @@ const SessionDetail = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {preCheckInData.participants.map((participant) => (
-                            <tr key={participant.callSign}>
+                          {preCheckInData.participants.map((participant) => {
+                            const alreadyInSession = sessionData?.participants?.some(p => 
+                              p.call_sign?.toUpperCase() === participant.callSign?.toUpperCase()
+                            );
+                            return (
+                            <tr key={participant.callSign} style={alreadyInSession ? { opacity: 0.5 } : {}}>
                               <td>
                                 <input
                                   type="checkbox"
                                   checked={selectedPreCheckIns.has(participant.callSign)}
                                   onChange={(e) => handlePreCheckInSelect(participant, e.target.checked)}
+                                  disabled={alreadyInSession}
                                 />
                               </td>
                               <td>
@@ -2544,13 +3198,19 @@ const SessionDetail = () => {
                                   <Radio size={14} className="text-primary me-2" />
                                   <div>
                                     <strong>{participant.callSign}</strong>
-                                    {!participant.hasOperatorRecord && (
+                                    {alreadyInSession && (
+                                      <div className="small text-success">
+                                        <Check size={10} className="me-1" />
+                                        Already in session
+                                      </div>
+                                    )}
+                                    {!alreadyInSession && !participant.hasOperatorRecord && (
                                       <div className="small text-info">
                                         <Search size={10} className="me-1" />
                                         Will lookup QRZ
                                       </div>
                                     )}
-                                    {participant.hasOperatorRecord && (
+                                    {!alreadyInSession && participant.hasOperatorRecord && (
                                       <div className="small text-success">
                                         <User size={10} className="me-1" />
                                         In database
@@ -2590,7 +3250,8 @@ const SessionDetail = () => {
                                 </button>
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -2605,7 +3266,7 @@ const SessionDetail = () => {
                 )}
               </div>
               
-              <div className="modal-footer">
+              <div className="modal-footer" style={{ flexShrink: 0 }}>
                 <button 
                   className="btn btn-secondary"
                   onClick={() => setShowPreCheckIn(false)}

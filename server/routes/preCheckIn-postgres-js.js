@@ -256,15 +256,27 @@ router.post('/process', authenticateToken, async (req, res) => {
     
     const results = [];
     const errors = [];
+    const skipped = [];
+    
+    // Use current time as base, increment by 1 second per participant
+    // to preserve the original order from the website when sorted by time
+    const baseTime = new Date();
+    let timeOffset = 0;
     
     for (const participant of participants) {
       try {
         const { callSign, firstName, location, announce } = participant;
+        const flagEcholink = participant.flag_echolink || false;
         
         if (!callSign) {
           errors.push({ participant, error: 'Call sign is required' });
           continue;
         }
+        
+        // Calculate check-in time for this participant (base + offset seconds)
+        const checkInDate = new Date(baseTime.getTime() + (timeOffset * 1000));
+        const checkInTime = checkInDate.toTimeString().slice(0, 8); // HH:MM:SS
+        timeOffset++;
         
         // Check if participant already exists in this session
         const existingParticipant = await db.sql`
@@ -273,7 +285,7 @@ router.post('/process', authenticateToken, async (req, res) => {
         `;
         
         if (existingParticipant.length > 0) {
-          errors.push({ callSign: callSign.toUpperCase(), participant, error: 'Participant already exists in session' });
+          skipped.push({ callSign: callSign.toUpperCase(), reason: 'Already in session' });
           continue;
         }
         
@@ -334,10 +346,11 @@ router.post('/process', authenticateToken, async (req, res) => {
         // Add participant to session with operator link
         const participantResult = await db.sql`
           INSERT INTO session_participants (
-            session_id, call_sign, name, notes, operator_id
+            session_id, call_sign, name, check_in_time, notes, operator_id, flag_echolink
           ) VALUES (
-            ${sessionId}, ${callSign.toUpperCase()}, ${resolvedName}, 
-            ${`Pre-check-in: ${announce || 'No announcement'}`}, ${operatorId}
+            ${sessionId}, ${callSign.toUpperCase()}, ${resolvedName},
+            ${checkInTime},
+            ${`Pre-check-in: ${announce || 'No announcement'}`}, ${operatorId}, ${flagEcholink}
           ) RETURNING *
         `;
         
@@ -375,8 +388,10 @@ router.post('/process', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       processed: results.length,
+      skipped: skipped.length,
       errors: errors.length,
       results,
+      skipped,
       errors
     });
     

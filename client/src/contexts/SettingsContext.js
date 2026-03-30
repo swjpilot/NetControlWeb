@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { setAppTimezone } from '../utils/dateUtils';
 
 const SettingsContext = createContext();
 
@@ -30,6 +31,11 @@ export const SettingsProvider = ({ children }) => {
         
         const dbSettings = response.data.settings;
         setSettings(dbSettings);
+        
+        // Apply timezone setting globally
+        if (dbSettings.app_timezone) {
+          setAppTimezone(dbSettings.app_timezone);
+        }
         
         // Sync important settings to localStorage for offline access
         if (dbSettings.theme) {
@@ -67,6 +73,11 @@ export const SettingsProvider = ({ children }) => {
         
         // Update local state
         setSettings(prev => ({ ...prev, ...newSettings }));
+        
+        // Apply timezone change immediately
+        if (newSettings.app_timezone !== undefined) {
+          setAppTimezone(newSettings.app_timezone);
+        }
         
         // Sync to localStorage
         if (newSettings.theme) {

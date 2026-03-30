@@ -15,12 +15,15 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import NetCalendar from '../components/NetCalendar';
+import { formatDateLocal } from '../utils/dateUtils';
 
 const NetSchedules = () => {
   const { isAdmin } = useAuth();
+  const { getSetting } = useSettings();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
@@ -28,7 +31,7 @@ const NetSchedules = () => {
   const [editingException, setEditingException] = useState(null);
   const [exceptionDate, setExceptionDate] = useState('');
   const [selectedDateNets, setSelectedDateNets] = useState([]);
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'calendar'
+  const [viewMode, setViewMode] = useState('calendar'); // 'list' or 'calendar'
   const queryClient = useQueryClient();
 
   const { register, handleSubmit, reset, formState: { errors }, setValue, watch } = useForm({
@@ -65,10 +68,18 @@ const NetSchedules = () => {
     () => axios.get('/api/auth/net-control-users').then(res => res.data)
   );
 
-  // Fetch upcoming nets calendar
+  // Fetch upcoming nets calendar using configurable range
+  const calendarDaysPast = parseInt(getSetting('calendar_days_past', '90')) || 90;
+  const calendarDaysFuture = parseInt(getSetting('calendar_days_future', '90')) || 90;
+
   const { data: upcomingData } = useQuery(
-    'upcoming-nets',
-    () => axios.get('/api/schedules/calendar/upcoming', { params: { days: 60 } }).then(res => res.data)
+    ['upcoming-nets', calendarDaysPast, calendarDaysFuture],
+    () => {
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - calendarDaysPast);
+      const start_date = pastDate.toISOString().split('T')[0];
+      return axios.get('/api/schedules/calendar/upcoming', { params: { days: calendarDaysFuture, start_date } }).then(res => res.data);
+    }
   );
 
   const schedules = schedulesData?.schedules || [];
@@ -354,11 +365,7 @@ const NetSchedules = () => {
 
   // Format date string without timezone conversion
   const formatDateString = (dateStr) => {
-    if (!dateStr) return '';
-    // dateStr is in format YYYY-MM-DD
-    const [year, month, day] = dateStr.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    return date.toLocaleDateString();
+    return formatDateLocal(dateStr);
   };
 
   const getRecurrenceDescription = (schedule) => {
@@ -801,7 +808,7 @@ const NetSchedules = () => {
         <div className="col-lg-4">
           <div className="card">
             <div className="card-header">
-              <h5 className="mb-0">Upcoming Nets (Next 60 Days)</h5>
+              <h5 className="mb-0">Upcoming Nets (Next {calendarDaysFuture} Days)</h5>
             </div>
             <div className="card-body" style={{ maxHeight: '600px', overflowY: 'auto' }}>
               {upcomingNets.length === 0 ? (

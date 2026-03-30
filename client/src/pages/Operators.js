@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Users, 
   Plus, 
@@ -14,19 +15,22 @@ import {
   MessageSquare,
   Loader,
   Filter,
-  Map
+  Map,
+  RefreshCw
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSettings } from '../contexts/SettingsContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { formatDateLocal } from '../utils/dateUtils';
 import OperatorMap from '../components/OperatorMap';
 
 const Operators = () => {
   const { getSetting, updateSettings } = useSettings();
+  const [searchParams] = useSearchParams();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [filterClass, setFilterClass] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -105,6 +109,26 @@ const Operators = () => {
     }
   );
 
+  // Update operator from QRZ
+  const [qrzUpdatingId, setQrzUpdatingId] = useState(null);
+  const updateFromQrzMutation = useMutation(
+    (operatorId) => axios.post(`/api/operators/${operatorId}/update-from-qrz`),
+    {
+      onSuccess: (response) => {
+        queryClient.invalidateQueries('operators');
+        const { operator, preferred_name_set, qrz_name } = response.data;
+        let msg = `${operator.call_sign} updated from QRZ`;
+        if (preferred_name_set) msg += ` (previous name saved as preferred name)`;
+        toast.success(msg, { duration: 4000 });
+        setQrzUpdatingId(null);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'QRZ update failed');
+        setQrzUpdatingId(null);
+      }
+    }
+  );
+
   // QRZ lookup mutation for auto-fill
   const qrzLookupMutation = useMutation(
     (callSign) => axios.get(`/api/qrz/lookup/${callSign}`),
@@ -150,16 +174,27 @@ const Operators = () => {
   );
 
   const onSubmit = (data) => {
-    // Convert callsign to uppercase
-    data.callSign = data.callSign.toUpperCase();
+    // Map form field names to backend field names
+    const operatorData = {
+      call_sign: (data.callSign || '').toUpperCase(),
+      name: data.name || '',
+      preferred_name: data.preferred_name || '',
+      email: data.email || '',
+      phone: data.phone || '',
+      address: data.street || '',
+      city: data.location ? data.location.split(',')[0]?.trim() : '',
+      state: data.location ? data.location.split(',')[1]?.trim() : '',
+      license_class: data.class || '',
+      notes: data.comment || '',
+    };
     
     if (editingOperator) {
       updateOperatorMutation.mutate({
         operatorId: editingOperator.id,
-        operatorData: data
+        operatorData
       });
     } else {
-      addOperatorMutation.mutate(data);
+      addOperatorMutation.mutate(operatorData);
     }
   };
 
@@ -167,6 +202,7 @@ const Operators = () => {
     setEditingOperator(operator);
     setValue('callSign', operator.call_sign);
     setValue('name', operator.name || '');
+    setValue('preferred_name', operator.preferred_name || '');
     setValue('street', operator.street || '');
     setValue('location', operator.location || '');
     setValue('comment', operator.comment || '');
@@ -393,6 +429,15 @@ const Operators = () => {
 
               <div className="form-row">
                 <div className="form-group">
+                  <label className="form-label">Preferred First Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g., Bob, Jim, etc."
+                    {...register('preferred_name')}
+                  />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Street Address</label>
                   <input
                     type="text"
@@ -539,7 +584,9 @@ const Operators = () => {
                             {operator.name && (
                               <div className="d-flex align-items-center">
                                 <User size={14} className="text-muted me-1" />
-                                {operator.name}
+                                {operator.preferred_name ? (
+                                  <><span className="text-primary">{operator.preferred_name}</span> <span className="text-muted small">({operator.name})</span></>
+                                ) : operator.name}
                               </div>
                             )}
                             {operator.grid && (
@@ -599,11 +646,19 @@ const Operators = () => {
                         <td>
                           <div className="d-flex align-items-center small text-muted">
                             <Calendar size={12} className="me-1" />
-                            {new Date(operator.updated_at).toLocaleDateString()}
+                            {formatDateLocal(operator.updated_at)}
                           </div>
                         </td>
                         <td>
                           <div className="d-flex gap-1">
+                            <button 
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={() => { setQrzUpdatingId(operator.id); updateFromQrzMutation.mutate(operator.id); }}
+                              disabled={qrzUpdatingId === operator.id}
+                              title="Update from QRZ"
+                            >
+                              {qrzUpdatingId === operator.id ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                            </button>
                             <button 
                               className="btn btn-sm btn-outline-primary"
                               onClick={() => handleEdit(operator)}

@@ -21,6 +21,7 @@ import { useForm } from 'react-hook-form';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { formatDateLocal } from '../utils/dateUtils';
 
 const UserManagement = () => {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -57,13 +58,7 @@ const UserManagement = () => {
   // Helper function to format dates safely
   const formatDate = (dateString) => {
     if (!dateString) return 'Never';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      return date.toLocaleDateString();
-    } catch (error) {
-      return 'Invalid Date';
-    }
+    return formatDateLocal(dateString);
   };
 
   // Fetch all users
@@ -331,6 +326,7 @@ const UserManagement = () => {
                     >
                       <option value="user">User</option>
                       <option value="admin">Administrator</option>
+                      <option value="readonly">Read Only</option>
                     </select>
                   </div>
                 </div>
@@ -343,6 +339,7 @@ const UserManagement = () => {
                     <select className="form-control" {...register('role')}>
                       <option value="user">User</option>
                       <option value="admin">Administrator</option>
+                      <option value="readonly">Read Only</option>
                     </select>
                   </div>
                   <div className="form-group">

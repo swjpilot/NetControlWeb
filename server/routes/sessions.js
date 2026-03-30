@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database/postgres-js-db');
-const { authenticateToken } = require('./auth-postgres-js');
+const { authenticateToken, requireWrite } = require('./auth-postgres-js');
 
 // Debug endpoint to list all session IDs
 router.get('/debug/list-ids', authenticateToken, async (req, res) => {
@@ -64,25 +64,46 @@ router.get('/debug', authenticateToken, async (req, res) => {
 // Get all sessions
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { limit = 25, offset = 0 } = req.query;
+    const { limit = 25, offset = 0, search, date_from, date_to } = req.query;
     
-    // Use the same approach as the working dashboard stats
-    // First get total count using the same method as dashboard
-    const countResult = await db.sql`
-      SELECT COUNT(DISTINCT s.id) as count 
-      FROM sessions s
-    `;
+    // Build filter conditions using postgres.js unsafe for dynamic WHERE
+    let filterSQL = '';
+    const params = [];
+    
+    if (search || date_from || date_to) {
+      const clauses = [];
+      if (search) {
+        clauses.push(`(s.net_control_call ILIKE $${params.length + 1} OR s.net_control_name ILIKE $${params.length + 1} OR s.frequency ILIKE $${params.length + 1} OR s.notes ILIKE $${params.length + 1})`);
+        params.push(`%${search}%`);
+      }
+      if (date_from) {
+        clauses.push(`s.session_date >= $${params.length + 1}`);
+        params.push(date_from);
+      }
+      if (date_to) {
+        clauses.push(`s.session_date <= $${params.length + 1}`);
+        params.push(date_to);
+      }
+      filterSQL = 'WHERE ' + clauses.join(' AND ');
+    }
+
+    const countResult = await db.sql.unsafe(
+      `SELECT COUNT(DISTINCT s.id) as count FROM sessions s ${filterSQL}`,
+      params
+    );
     const total = parseInt(countResult[0].count);
     
-    // Get sessions using a simple query
-    const sessions = await db.sql`
-      SELECT s.id, s.session_date, s.net_control_call, s.net_control_name, 
+    const sessions = await db.sql.unsafe(
+      `SELECT s.id, s.session_date, s.net_control_call, s.net_control_name, 
              s.start_time, s.end_time, s.frequency, s.mode, s.notes,
+             s.total_checkins, s.total_traffic,
              s.created_at, s.updated_at
       FROM sessions s
+      ${filterSQL}
       ORDER BY s.session_date DESC, s.start_time DESC
-      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
-    `;
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, parseInt(limit), parseInt(offset)]
+    );
     
     // Calculate actual counts for each session
     const sessionsWithCounts = [];
@@ -91,13 +112,17 @@ router.get('/', authenticateToken, async (req, res) => {
       const participantResult = await db.sql`
         SELECT COUNT(*) as count FROM session_participants WHERE session_id = ${session.id}
       `;
-      const participant_count = parseInt(participantResult[0].count) || 0;
+      const actual_participants = parseInt(participantResult[0].count) || 0;
       
       // Get traffic count
       const trafficResult = await db.sql`
         SELECT COUNT(*) as count FROM session_traffic WHERE session_id = ${session.id}
       `;
-      const traffic_count = parseInt(trafficResult[0].count) || 0;
+      const actual_traffic = parseInt(trafficResult[0].count) || 0;
+      
+      // Use actual count if there are real records, otherwise fall back to stored summary totals
+      const participant_count = actual_participants > 0 ? actual_participants : (parseInt(session.total_checkins) || 0);
+      const traffic_count = actual_traffic > 0 ? actual_traffic : (parseInt(session.total_traffic) || 0);
       
       sessionsWithCounts.push({
         ...session,
@@ -134,11 +159,19 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
       SELECT 
         COUNT(DISTINCT s.id) as total_sessions,
         COUNT(DISTINCT CASE WHEN s.session_date >= CURRENT_DATE - INTERVAL '7 days' THEN s.id END) as sessions_last_7_days,
-        COUNT(sp.id) as total_participants,
-        COUNT(st.id) as total_traffic_handled
+        SUM(GREATEST(COALESCE(pc.count, 0), COALESCE(s.total_checkins, 0))) as total_participants,
+        SUM(GREATEST(COALESCE(tc.count, 0), COALESCE(s.total_traffic, 0))) as total_traffic_handled
       FROM sessions s
-      LEFT JOIN session_participants sp ON s.id = sp.session_id
-      LEFT JOIN session_traffic st ON s.id = st.session_id
+      LEFT JOIN (
+        SELECT session_id, COUNT(*) as count
+        FROM session_participants
+        GROUP BY session_id
+      ) pc ON s.id = pc.session_id
+      LEFT JOIN (
+        SELECT session_id, COUNT(*) as count
+        FROM session_traffic
+        GROUP BY session_id
+      ) tc ON s.id = tc.session_id
     `;
     
     const stats = result[0];
@@ -182,6 +215,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const sessionResult = await db.sql`
       SELECT id, session_date, net_control_call, net_control_name, start_time, end_time,
              frequency, mode, notes, weather, net_type, power, antenna,
+             total_checkins, total_traffic,
              created_at, updated_at
       FROM sessions 
       WHERE id = ${sessionId}
@@ -215,7 +249,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
              COALESCE(sp.flag_traffic, false) as flag_traffic,
              COALESCE(sp.flag_echolink, false) as flag_echolink,
              COALESCE(sp.flag_announcement, false) as flag_announcement,
+             COALESCE(sp.acknowledged, false) as acknowledged,
              o.name as operator_name, 
+             o.preferred_name as operator_preferred_name,
              o.city as operator_city,
              o.state as operator_state,
              o.license_class,
@@ -241,9 +277,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
       ORDER BY time_received ASC, created_at ASC
     `;
     
-    // Add counts
-    const participant_count = participants.length;
-    const traffic_count = traffic.length;
+    // Add counts - use actual records if present, otherwise fall back to stored summary totals
+    const participant_count = participants.length > 0 ? participants.length : (parseInt(session.total_checkins) || 0);
+    const traffic_count = traffic.length > 0 ? traffic.length : (parseInt(session.total_traffic) || 0);
     
     console.log('✅ Session details prepared:', {
       sessionId: session.id,
@@ -269,7 +305,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Create new session
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireWrite, async (req, res) => {
   try {
     const {
       session_date,
@@ -294,7 +330,7 @@ router.post('/', authenticateToken, async (req, res) => {
         session_date, net_control_call, net_control_name, start_time, end_time,
         frequency, mode, notes, weather_report, total_checkins, total_traffic
       ) VALUES (
-        ${session_date}, ${net_control_call}, ${net_control_name || null}, 
+        ${session_date}, ${net_control_call.toUpperCase()}, ${net_control_name || null}, 
         ${start_time || null}, ${end_time || null}, ${frequency || null}, 
         ${mode || 'FM'}, ${notes || null}, ${weather_report || null},
         ${total_checkins}, ${total_traffic}
@@ -310,7 +346,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Update session
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -334,7 +370,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const result = await db.sql`
       UPDATE sessions SET
         session_date = ${session_date},
-        net_control_call = ${net_control_call},
+        net_control_call = ${net_control_call.toUpperCase()},
         net_control_name = ${net_control_name || null},
         start_time = ${start_time || null},
         end_time = ${end_time || null},
@@ -362,17 +398,35 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // Delete session
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireWrite, async (req, res) => {
   try {
     const { id } = req.params;
     
-    const result = await db.sql`
-      DELETE FROM sessions WHERE id = ${id} RETURNING *
+    // Fetch the session first to check permissions
+    const session = await db.sql`
+      SELECT id, net_control_call, created_at FROM sessions WHERE id = ${id}
     `;
     
-    if (result.length === 0) {
+    if (session.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
+    
+    const isAdmin = req.user.role === 'admin';
+    const userCallSign = (req.user.callSign || '').toUpperCase();
+    const sessionCallSign = (session[0].net_control_call || '').toUpperCase();
+    const isOwner = userCallSign && userCallSign === sessionCallSign;
+    const hoursOld = (Date.now() - new Date(session[0].created_at).getTime()) / (1000 * 60 * 60);
+    
+    if (!isAdmin) {
+      if (!isOwner) {
+        return res.status(403).json({ error: 'Only the net controller who created this session or an admin can delete it' });
+      }
+      if (hoursOld > 72) {
+        return res.status(403).json({ error: 'Sessions can only be deleted within 72 hours of creation. Contact an admin.' });
+      }
+    }
+    
+    await db.sql`DELETE FROM sessions WHERE id = ${id}`;
     
     res.json({ message: 'Session deleted successfully' });
     
@@ -383,7 +437,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // Add participant to session
-router.post('/:id/participants', authenticateToken, async (req, res) => {
+router.post('/:id/participants', authenticateToken, requireWrite, async (req, res) => {
   try {
     const { id } = req.params;
     const { call_sign, name, check_in_time, check_out_time, notes, operator_id, flag_comment, flag_traffic, flag_echolink, flag_announcement } = req.body;
@@ -478,7 +532,7 @@ router.post('/:id/participants', authenticateToken, async (req, res) => {
 router.put('/:sessionId/participants/:participantId', authenticateToken, async (req, res) => {
   try {
     const { sessionId, participantId } = req.params;
-    const { call_sign, name, check_in_time, check_out_time, notes, operator_id, flag_comment, flag_traffic, flag_echolink, flag_announcement } = req.body;
+    const { call_sign, name, check_in_time, check_out_time, notes, operator_id, flag_comment, flag_traffic, flag_echolink, flag_announcement, acknowledged } = req.body;
     
     if (!call_sign) {
       return res.status(400).json({ error: 'Call sign is required' });
@@ -506,6 +560,7 @@ router.put('/:sessionId/participants/:participantId', authenticateToken, async (
         flag_traffic = ${flag_traffic || false},
         flag_echolink = ${flag_echolink || false},
         flag_announcement = ${flag_announcement || false},
+        acknowledged = ${acknowledged !== undefined ? acknowledged : false},
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${participantId} AND session_id = ${sessionId}
       RETURNING *
@@ -515,6 +570,44 @@ router.put('/:sessionId/participants/:participantId', authenticateToken, async (
     
   } catch (error) {
     console.error('Update participant error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Patch participant (lightweight update for acknowledged, preferred_name)
+router.patch('/:sessionId/participants/:participantId', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId, participantId } = req.params;
+    const { acknowledged, preferred_name } = req.body;
+
+    // Verify participant exists
+    const existing = await db.sql`
+      SELECT sp.*, sp.operator_id FROM session_participants sp
+      WHERE sp.id = ${participantId} AND sp.session_id = ${sessionId}
+    `;
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Participant not found' });
+    }
+
+    // Update acknowledged if provided
+    if (acknowledged !== undefined) {
+      await db.sql`
+        UPDATE session_participants SET acknowledged = ${acknowledged}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${participantId} AND session_id = ${sessionId}
+      `;
+    }
+
+    // Update preferred_name on the operator record if provided
+    if (preferred_name !== undefined && existing[0].operator_id) {
+      await db.sql`
+        UPDATE operators SET preferred_name = ${preferred_name || null}
+        WHERE id = ${existing[0].operator_id}
+      `;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Patch participant error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -821,7 +914,7 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
       m: modeValue,
       c: parseInt(session.checkin_count) || 0,
       t: parseInt(session.traffic_count) || 0,
-      a: hasAnnouncements ? 'Yes' : 'No'
+      a: 'Yes'
     });
 
     const submitUrl = `${baseUrl}?${params.toString()}`;
@@ -830,11 +923,20 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
     const axios = require('axios');
     const response = await axios.get(submitUrl, { timeout: 15000 });
 
+    // Capture the response body from the external service
+    let responseBody = '';
+    if (typeof response.data === 'string') {
+      responseBody = response.data;
+    } else if (response.data) {
+      responseBody = JSON.stringify(response.data);
+    }
+
     res.json({
       success: true,
       message: 'Net report submitted successfully',
       url: submitUrl,
       response_status: response.status,
+      response_body: responseBody,
       data: {
         firstName,
         callSign: session.net_control_call,
@@ -842,7 +944,7 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
         mode: modeValue,
         checkins: parseInt(session.checkin_count) || 0,
         traffic: parseInt(session.traffic_count) || 0,
-        announcements: hasAnnouncements ? 'Yes' : 'No'
+        announcements: 'Yes'
       }
     });
 
@@ -856,6 +958,194 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
     } else {
       res.status(500).json({ error: error.message || 'Failed to submit net report' });
     }
+  }
+});
+
+// Import historical summary sessions from CSV/text data
+router.post('/import-summary', authenticateToken, requireWrite, async (req, res) => {
+  try {
+    const { data, frequency, mode, start_time, overwrite } = req.body;
+
+    if (!data || typeof data !== 'string') {
+      return res.status(400).json({ error: 'No import data provided' });
+    }
+
+    const lines = data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    if (lines.length === 0) {
+      return res.status(400).json({ error: 'No valid lines found in import data' });
+    }
+
+    // QRZ lookup helper
+    const { getQRZSession, mapLicenseClass } = require('./qrz-postgres-js');
+    const xml2js = require('xml2js');
+
+    async function lookupAndCreateOperator(callSign, firstName) {
+      // Check if operator already exists
+      const existing = await db.sql`
+        SELECT id, name FROM operators WHERE call_sign = ${callSign}
+      `;
+      if (existing.length > 0) {
+        return { operatorId: existing[0].id, created: false, fullName: existing[0].name || firstName };
+      }
+
+      // Try QRZ lookup
+      let qrzData = null;
+      try {
+        const sessionKey = await getQRZSession();
+        const lookupUrl = 'https://xmldata.qrz.com/xml/current/';
+        const response = await axios.get(lookupUrl, {
+          params: { s: sessionKey, callsign: callSign },
+          timeout: 10000
+        });
+        const parser = new xml2js.Parser();
+        const result = await parser.parseStringPromise(response.data);
+        if (result.QRZDatabase && result.QRZDatabase.Callsign && result.QRZDatabase.Callsign[0]) {
+          const d = result.QRZDatabase.Callsign[0];
+          qrzData = {
+            name: d.fname && d.name ? `${d.fname[0]} ${d.name[0]}` : (d.name ? d.name[0] : ''),
+            address: d.addr1 ? d.addr1[0] : '',
+            city: d.addr2 ? d.addr2[0] : '',
+            state: d.state ? d.state[0] : '',
+            email: d.email ? d.email[0] : '',
+            grid: d.grid ? d.grid[0] : '',
+            licenseClass: mapLicenseClass(d.class ? d.class[0] : '')
+          };
+        }
+      } catch (qrzErr) {
+        console.log(`QRZ lookup failed for ${callSign} during import: ${qrzErr.message}`);
+      }
+
+      // Create operator record
+      const operatorName = qrzData?.name || firstName || null;
+      const newOp = await db.sql`
+        INSERT INTO operators (call_sign, name, address, city, state, email, license_class, active, notes)
+        VALUES (
+          ${callSign},
+          ${operatorName},
+          ${qrzData?.address || null},
+          ${qrzData?.city || null},
+          ${qrzData?.state || null},
+          ${qrzData?.email || null},
+          ${qrzData?.licenseClass || null},
+          true,
+          ${qrzData ? `Added from QRZ during historical import. Grid: ${qrzData.grid || 'N/A'}` : `Added during historical import`}
+        ) RETURNING id
+      `;
+
+      return { operatorId: newOp[0].id, created: true, hasQRZ: !!qrzData, fullName: operatorName };
+    }
+
+    const results = [];
+    const errors = [];
+    const duplicates = [];
+    let operatorsCreated = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const line = lines[i];
+        const parts = line.split(/\s+/);
+
+        if (parts.length < 7) {
+          errors.push({ line: i + 1, text: line, error: `Expected 7 fields, got ${parts.length}` });
+          continue;
+        }
+
+        const firstName = parts[0];
+        const callSign = parts[1].toUpperCase();
+        const dateStr = parts[2];
+        const messageNumber = parts[3];
+        const participantCount = parseInt(parts[4]) || 0;
+        const trafficCount = parseInt(parts[5]) || 0;
+        const announce = parts.slice(6).join(' ');
+
+        const dateParts = dateStr.split('/');
+        if (dateParts.length !== 3) {
+          errors.push({ line: i + 1, text: line, error: `Invalid date format: ${dateStr}` });
+          continue;
+        }
+        const sessionDate = `${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`;
+
+        // Ensure operator exists (QRZ lookup + create if needed)
+        let operatorResult;
+        try {
+          operatorResult = await lookupAndCreateOperator(callSign, firstName);
+          if (operatorResult.created) operatorsCreated++;
+        } catch (opErr) {
+          console.error(`Operator creation failed for ${callSign}:`, opErr.message);
+          operatorResult = { operatorId: null, created: false, fullName: firstName };
+        }
+
+        const fullName = operatorResult.fullName || firstName;
+        const notes = `Imported summary. Msg#: ${messageNumber}. Announce: ${announce}`;
+
+        const existing = await db.sql`
+          SELECT id FROM sessions WHERE session_date = ${sessionDate} AND net_control_call = ${callSign}
+        `;
+
+        if (existing.length > 0) {
+          if (overwrite) {
+            await db.sql`
+              UPDATE sessions SET
+                net_control_name = ${fullName},
+                frequency = ${frequency || null},
+                mode = ${mode || 'FM'},
+                start_time = ${start_time || null},
+                notes = ${notes},
+                total_checkins = ${participantCount},
+                total_traffic = ${trafficCount},
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = ${existing[0].id}
+            `;
+            results.push({
+              line: i + 1,
+              session: { id: existing[0].id, session_date: sessionDate, net_control_call: callSign, total_checkins: participantCount, total_traffic: trafficCount },
+              firstName: fullName, callSign, date: dateStr, participants: participantCount, traffic: trafficCount,
+              overwritten: true, operatorCreated: operatorResult.created
+            });
+          } else {
+            duplicates.push({ line: i + 1, text: line, callSign, date: dateStr, existingId: existing[0].id });
+          }
+          continue;
+        }
+
+        const result = await db.sql`
+          INSERT INTO sessions (
+            session_date, net_control_call, net_control_name,
+            frequency, mode, start_time, notes,
+            total_checkins, total_traffic
+          ) VALUES (
+            ${sessionDate}, ${callSign.toUpperCase()}, ${fullName},
+            ${frequency || null}, ${mode || 'FM'}, ${start_time || null}, ${notes},
+            ${participantCount}, ${trafficCount}
+          ) RETURNING id, session_date, net_control_call, total_checkins, total_traffic
+        `;
+
+        results.push({
+          line: i + 1,
+          session: result[0],
+          firstName: fullName, callSign, date: dateStr, participants: participantCount, traffic: trafficCount,
+          operatorCreated: operatorResult.created
+        });
+      } catch (lineError) {
+        errors.push({ line: i + 1, text: lines[i], error: lineError.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      imported: results.length,
+      failed: errors.length,
+      duplicates: duplicates.length,
+      operatorsCreated,
+      total: lines.length,
+      results,
+      errors,
+      duplicates
+    });
+  } catch (error) {
+    console.error('Import summary sessions error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 

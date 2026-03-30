@@ -15,7 +15,9 @@ import {
   Loader,
   AlertTriangle,
   Send,
-  Link
+  Link,
+  Download,
+  Upload
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTheme } from '../contexts/ThemeContext';
@@ -54,30 +56,43 @@ const Settings = () => {
   const currentForm = tabForms[activeTab];
 
   // Fetch current settings
-  const { isLoading } = useQuery(
-    'settings',
-    () => axios.get('/api/settings').then(res => res.data.settings),
-    {
-      onSuccess: (data) => {
-        // Populate all forms with current settings
-        Object.entries(tabForms).forEach(([tabName, form]) => {
-          Object.entries(data).forEach(([key, value]) => {
+  const { data: settingsData, isLoading } = useQuery(
+    'admin-settings',
+    () => axios.get('/api/settings').then(res => res.data.settings)
+  );
+
+  // Populate forms when settings data is available
+  React.useEffect(() => {
+    if (settingsData) {
+      // Boolean setting keys that are stored as "true"/"false" strings in the DB
+      const booleanKeys = new Set([
+        'smtp_secure', 'smtp_starttls', 'smtp_no_auth',
+        'auto_backup_enabled', 'require_password_change',
+        'monthly_report_enabled', 'auto_backup_s3_enabled'
+      ]);
+
+      Object.entries(tabForms).forEach(([tabName, form]) => {
+        Object.entries(settingsData).forEach(([key, value]) => {
+          if (booleanKeys.has(key)) {
+            form.setValue(key, value === true || value === 'true');
+          } else {
             form.setValue(key, value);
-          });
-          // Set current theme if not in settings
-          if (!data.theme) {
-            form.setValue('theme', theme);
           }
         });
-      }
+        // Set current theme if not in settings
+        if (!settingsData.theme) {
+          form.setValue('theme', theme);
+        }
+      });
     }
-  );
+  }, [settingsData]);
 
   // Update settings mutation
   const updateSettingsMutation = useMutation(
     (data) => axios.put('/api/settings', { settings: data }),
     {
       onSuccess: (response) => {
+        queryClient.invalidateQueries('admin-settings');
         queryClient.invalidateQueries('settings');
         // Refresh settings context
         loadSettings();
@@ -172,6 +187,7 @@ const Settings = () => {
     (category) => axios.post('/api/settings/reset', { category }),
     {
       onSuccess: () => {
+        queryClient.invalidateQueries('admin-settings');
         queryClient.invalidateQueries('settings');
         toast.success('Settings reset successfully');
       },
@@ -202,12 +218,12 @@ const Settings = () => {
   const filterDataForTab = (data, tab) => {
     const tabFields = {
       qrz: ['qrz_username', 'qrz_password'],
-      app: ['app_name', 'app_description', 'default_net_control', 'default_net_frequency', 'default_net_time', 'default_net_power', 'default_grid_square', 'distance_unit'],
+      app: ['app_name', 'app_description', 'default_net_control', 'default_net_frequency', 'default_net_time', 'default_net_power', 'default_grid_square', 'distance_unit', 'app_timezone', 'calendar_days_past', 'calendar_days_future'],
       email: ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_starttls', 'smtp_no_auth', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
-      database: ['auto_backup_enabled', 'auto_backup_interval'],
+      database: ['auto_backup_enabled', 'auto_backup_interval', 'backup_s3_bucket', 'backup_s3_prefix', 'auto_backup_s3_enabled', 'backup_retention_count'],
       ui: ['theme', 'items_per_page'],
       security: ['session_timeout', 'require_password_change', 'min_password_length'],
-      integration: ['precheckin_url', 'netreport_url', 'net_script_template']
+      integration: ['precheckin_url', 'netreport_url', 'net_script_template', 'arrl_section_email', 'monthly_report_enabled', 'monthly_report_day', 'monthly_report_time', 'monthly_report_timezone', 'monthly_report_callsign']
     };
 
     const relevantFields = tabFields[tab] || [];
@@ -513,6 +529,53 @@ const Settings = () => {
                         </select>
                       </div>
                     </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">Application Timezone</label>
+                        <select className="form-control" {...currentForm.register('app_timezone')}>
+                          <option value="">Browser Default</option>
+                          <option value="America/New_York">Eastern (America/New_York)</option>
+                          <option value="America/Chicago">Central (America/Chicago)</option>
+                          <option value="America/Denver">Mountain (America/Denver)</option>
+                          <option value="America/Phoenix">Arizona (America/Phoenix)</option>
+                          <option value="America/Los_Angeles">Pacific (America/Los_Angeles)</option>
+                          <option value="America/Anchorage">Alaska (America/Anchorage)</option>
+                          <option value="Pacific/Honolulu">Hawaii (Pacific/Honolulu)</option>
+                          <option value="America/Puerto_Rico">Atlantic (America/Puerto_Rico)</option>
+                          <option value="UTC">UTC</option>
+                        </select>
+                        <div className="form-text">All dates and times in the app will use this timezone</div>
+                      </div>
+                    </div>
+
+                    <h4 className="mt-4 mb-3">Schedule Calendar</h4>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">Calendar Days (Past)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          placeholder="90"
+                          min="0"
+                          max="365"
+                          {...currentForm.register('calendar_days_past')}
+                        />
+                        <div className="form-text">Number of days in the past to show on the schedule calendar</div>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Calendar Days (Future)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          placeholder="90"
+                          min="1"
+                          max="365"
+                          {...currentForm.register('calendar_days_future')}
+                        />
+                        <div className="form-text">Number of days in the future to show on the schedule calendar</div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -726,6 +789,36 @@ const Settings = () => {
                         How often to create automatic backups (1-168 hours)
                       </div>
                     </div>
+
+                    <h4 className="mt-4 mb-3">S3 Backup Storage</h4>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">S3 Bucket Name</label>
+                        <input type="text" className="form-control" placeholder="my-backup-bucket" {...currentForm.register('backup_s3_bucket')} />
+                        <div className="form-text">Uses the EB instance IAM role for authentication</div>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">S3 Key Prefix</label>
+                        <input type="text" className="form-control" placeholder="netcontrol-backups/" {...currentForm.register('backup_s3_prefix')} />
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <div className="form-check mt-2">
+                          <input type="checkbox" className="form-check-input" {...currentForm.register('auto_backup_s3_enabled')} />
+                          <label className="form-check-label">Automatically backup to S3 on schedule</label>
+                        </div>
+                        <div className="form-text">Uses the backup interval above. Requires S3 bucket to be configured.</div>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Backups to Keep</label>
+                        <input type="number" className="form-control" min="1" max="100" placeholder="10" {...currentForm.register('backup_retention_count')} />
+                        <div className="form-text">Oldest S3 backups beyond this count are automatically deleted</div>
+                      </div>
+                    </div>
+
+                    <DatabaseBackupPanel />
                   </div>
                 )}
 
@@ -852,14 +945,14 @@ const Settings = () => {
                         className="form-control"
                         rows="12"
                         placeholder={"Good evening, this is {CALLSIGN}, {FIRSTNAME}, your net control for the {NET_TYPE} net on {DATE}.\n\nWe are operating on {FREQUENCY} {MODE}.\n\nWe currently have {CHECKINS} check-ins and {TRAFFIC} traffic items.\n\nThis net is now open for check-ins..."}
-                        style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
+                        style={{ fontFamily: 'monospace', fontSize: '0.9rem', whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflowWrap: 'break-word' }}
                         {...currentForm.register('net_script_template')}
                       />
                       <div className="form-text">
                         Write your net script here. Use the following variables that will be replaced with session data:
                       </div>
-                      <div className="mt-2">
-                        <div className="d-flex flex-wrap gap-2">
+                      <div className="mt-2" style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {[
                             { var: '{FIRSTNAME}', desc: 'NC first name' },
                             { var: '{FULLNAME}', desc: 'NC full name' },
@@ -867,26 +960,123 @@ const Settings = () => {
                             { var: '{CITY}', desc: 'NC city' },
                             { var: '{DATE}', desc: 'Session date' },
                             { var: '{DAY_OF_WEEK}', desc: 'Day of week' },
-                            { var: '{STARTING_GROUP}', desc: 'Starting group (Alpha–Delta, etc.)' },
+                            { var: '{STARTING_GROUP}', desc: 'Starting group' },
+                            { var: '{GROUP_1}', desc: '1st group' },
+                            { var: '{GROUP_2}', desc: '2nd group' },
+                            { var: '{GROUP_3}', desc: '3rd group' },
+                            { var: '{GROUP_4}', desc: '4th group' },
+                            { var: '{GROUP_5}', desc: '5th group' },
+                            { var: '{GROUP_6}', desc: '6th group' },
+                            { var: '{GROUP_CHECKLIST}', desc: 'Interactive group checkboxes' },
                             { var: '{FREQUENCY}', desc: 'Frequency' },
-                            { var: '{MODE}', desc: 'Mode (FM, SSB, etc.)' },
+                            { var: '{MODE}', desc: 'Mode' },
                             { var: '{NET_TYPE}', desc: 'Net type' },
-                            { var: '{CHECKINS}', desc: 'Check-in count' },
-                            { var: '{TRAFFIC}', desc: 'Traffic count' },
+                            { var: '{CHECKINS}', desc: 'Check-ins' },
+                            { var: '{TRAFFIC}', desc: 'Traffic' },
                             { var: '{START_TIME}', desc: 'Start time' },
                             { var: '{END_TIME}', desc: 'End time' },
                             { var: '{POWER}', desc: 'Power' },
                             { var: '{ANTENNA}', desc: 'Antenna' },
-                            { var: '{TOMORROW_FIRSTNAME}', desc: "Tomorrow's NC first name" },
-                            { var: '{TOMORROW_CALLSIGN}', desc: "Tomorrow's NC call sign" },
-                            { var: '[i]...[/i]', desc: 'Italic text' },
-                            { var: '[b]...[/b]', desc: 'Bold text' },
+                            { var: '{TOMORROW_FIRSTNAME}', desc: "Tomorrow NC" },
+                            { var: '{TOMORROW_CALLSIGN}', desc: "Tomorrow call" },
+                            { var: '[i]...[/i]', desc: 'Italic' },
+                            { var: '[b]...[/b]', desc: 'Bold' },
                           ].map(v => (
-                            <span key={v.var} className="badge bg-secondary" style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                            <span key={v.var} className="badge bg-secondary" style={{ fontSize: '0.7rem', fontFamily: 'monospace', display: 'inline-block' }}>
                               {v.var} <small className="opacity-75">= {v.desc}</small>
                             </span>
                           ))}
                         </div>
+                      </div>
+                    </div>
+
+                    <h4 className="mt-4 mb-3">ARRL Monthly Report</h4>
+                    <div className="form-group">
+                      <label className="form-label">Section Manager Email</label>
+                      <input
+                        type="email"
+                        className="form-control"
+                        placeholder="section-manager@arrl.org"
+                        {...currentForm.register('arrl_section_email')}
+                      />
+                      <div className="form-text">
+                        Default recipient for the monthly net report email sent to the ARRL Section Manager
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <div className="form-check">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          {...currentForm.register('monthly_report_enabled')}
+                        />
+                        <label className="form-check-label">
+                          Enable automatic monthly report email
+                        </label>
+                      </div>
+                      <div className="form-text">
+                        When enabled, the monthly net report will be emailed automatically on the configured schedule
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label className="form-label">Day of Month to Send</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min="1"
+                          max="28"
+                          placeholder="1"
+                          {...currentForm.register('monthly_report_day')}
+                        />
+                        <div className="form-text">
+                          Day of the month to send the report (1-28). Report covers the previous month.
+                        </div>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Time to Send</label>
+                        <input
+                          type="time"
+                          className="form-control"
+                          {...currentForm.register('monthly_report_time')}
+                        />
+                        <div className="form-text">
+                          Time of day to send the automated report
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Timezone</label>
+                      <select className="form-control" {...currentForm.register('monthly_report_timezone')}>
+                        <option value="">Server default</option>
+                        <option value="America/New_York">Eastern (America/New_York)</option>
+                        <option value="America/Chicago">Central (America/Chicago)</option>
+                        <option value="America/Denver">Mountain (America/Denver)</option>
+                        <option value="America/Los_Angeles">Pacific (America/Los_Angeles)</option>
+                        <option value="America/Anchorage">Alaska (America/Anchorage)</option>
+                        <option value="Pacific/Honolulu">Hawaii (Pacific/Honolulu)</option>
+                        <option value="America/Phoenix">Arizona (America/Phoenix)</option>
+                        <option value="America/Puerto_Rico">Atlantic (America/Puerto_Rico)</option>
+                        <option value="UTC">UTC</option>
+                      </select>
+                      <div className="form-text">
+                        Timezone used for the scheduled send time
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Sender Call Sign</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g., W1AW"
+                        {...currentForm.register('monthly_report_callsign')}
+                      />
+                      <div className="form-text">
+                        Call sign included in the automated monthly report (appears in the report body)
                       </div>
                     </div>
                   </div>
@@ -926,6 +1116,187 @@ const Settings = () => {
           </form>
         </div>
       </div>
+    </div>
+  );
+};
+
+// Database Backup Panel (admin only)
+const DatabaseBackupPanel = () => {
+  const [s3Backups, setS3Backups] = React.useState([]);
+  const [s3Loading, setS3Loading] = React.useState(false);
+  const [actionLoading, setActionLoading] = React.useState('');
+  const fileInputRef = React.useRef(null);
+
+  const handleDownload = async () => {
+    setActionLoading('download');
+    try {
+      const token = localStorage.getItem('netcontrol_token');
+      const response = await axios.get('/api/backup/export', {
+        headers: { Authorization: 'Bearer ' + token },
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(response.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'netcontrol-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success('Backup downloaded');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Download failed');
+    }
+    setActionLoading('');
+  };
+
+  const handleUploadRestore = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!window.confirm('This will REPLACE all data in the database with the backup. Are you sure?')) {
+      e.target.value = '';
+      return;
+    }
+    setActionLoading('upload');
+    try {
+      const formData = new FormData();
+      formData.append('backup', file);
+      const token = localStorage.getItem('netcontrol_token');
+      const res = await axios.post('/api/backup/restore', formData, {
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'multipart/form-data' }
+      });
+      const r = res.data.results;
+      const summary = Object.entries(r).map(([t, v]) => t + ': ' + v.restored).join(', ');
+      toast.success('Restored: ' + summary, { duration: 6000 });
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Restore failed');
+    }
+    e.target.value = '';
+    setActionLoading('');
+  };
+
+  const handleS3Upload = async () => {
+    setActionLoading('s3upload');
+    try {
+      const token = localStorage.getItem('netcontrol_token');
+      const res = await axios.post('/api/backup/s3/upload', {}, {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      toast.success('Backup uploaded to S3: ' + res.data.key);
+      loadS3Backups();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'S3 upload failed');
+    }
+    setActionLoading('');
+  };
+
+  const loadS3Backups = async () => {
+    setS3Loading(true);
+    try {
+      const token = localStorage.getItem('netcontrol_token');
+      const res = await axios.get('/api/backup/s3/list', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      setS3Backups(res.data.backups || []);
+    } catch (e) {
+      // S3 not configured — that's fine
+      setS3Backups([]);
+    }
+    setS3Loading(false);
+  };
+
+  const handleS3Restore = async (key) => {
+    if (!window.confirm('This will REPLACE all data with this S3 backup. Are you sure?')) return;
+    setActionLoading('s3restore-' + key);
+    try {
+      const token = localStorage.getItem('netcontrol_token');
+      const res = await axios.post('/api/backup/s3/restore', { key }, {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      const r = res.data.results;
+      const summary = Object.entries(r).map(([t, v]) => t + ': ' + v.restored).join(', ');
+      toast.success('Restored from S3: ' + summary, { duration: 6000 });
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'S3 restore failed');
+    }
+    setActionLoading('');
+  };
+
+  const handleS3Delete = async (key) => {
+    if (!window.confirm('Delete this backup from S3?')) return;
+    try {
+      const token = localStorage.getItem('netcontrol_token');
+      await axios.delete('/api/backup/s3/' + encodeURIComponent(key), {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      toast.success('Backup deleted');
+      loadS3Backups();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Delete failed');
+    }
+  };
+
+  React.useEffect(() => { loadS3Backups(); }, []);
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  return (
+    <div className="mt-4">
+      <h4 className="mb-3">Backup & Restore</h4>
+      <div className="d-flex flex-wrap gap-2 mb-3">
+        <button className="btn btn-primary" onClick={handleDownload} disabled={!!actionLoading}>
+          {actionLoading === 'download' ? <Loader size={14} className="animate-spin me-1" /> : <Download size={14} className="me-1" />}
+          Download Backup
+        </button>
+        <button className="btn btn-outline-primary" onClick={() => fileInputRef.current?.click()} disabled={!!actionLoading}>
+          {actionLoading === 'upload' ? <Loader size={14} className="animate-spin me-1" /> : <Upload size={14} className="me-1" />}
+          Restore from File
+        </button>
+        <input type="file" ref={fileInputRef} accept=".json" style={{ display: 'none' }} onChange={handleUploadRestore} />
+        <button className="btn btn-success" onClick={handleS3Upload} disabled={!!actionLoading}>
+          {actionLoading === 's3upload' ? <Loader size={14} className="animate-spin me-1" /> : <Upload size={14} className="me-1" />}
+          Backup to S3
+        </button>
+        <button className="btn btn-outline-secondary btn-sm" onClick={loadS3Backups} disabled={s3Loading}>
+          <RotateCcw size={14} className={s3Loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {s3Backups.length > 0 && (
+        <div>
+          <h5>S3 Backups</h5>
+          <div className="table-responsive">
+            <table className="table table-sm">
+              <thead>
+                <tr><th>Name</th><th>Size</th><th>Date</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {s3Backups.map(b => (
+                  <tr key={b.key}>
+                    <td className="small">{b.name}</td>
+                    <td className="small">{formatSize(b.size)}</td>
+                    <td className="small">{new Date(b.lastModified).toLocaleString()}</td>
+                    <td>
+                      <div className="d-flex gap-1">
+                        <button className="btn btn-sm btn-outline-primary" onClick={() => handleS3Restore(b.key)}
+                          disabled={actionLoading === 's3restore-' + b.key}>
+                          {actionLoading === 's3restore-' + b.key ? <Loader size={12} className="animate-spin" /> : 'Restore'}
+                        </button>
+                        <button className="btn btn-sm btn-outline-danger" onClick={() => handleS3Delete(b.key)}>
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

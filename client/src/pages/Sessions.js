@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
   Plus, 
@@ -12,18 +13,30 @@ import {
   Eye,
   Play,
   Square,
-  Loader
+  Loader,
+  Upload,
+  X
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import ResponsiveTable from '../components/ResponsiveTable';
+import { formatDateLocal, toDateInputValue, getTodayDate } from '../utils/dateUtils';
 
 const Sessions = () => {
   const { getSetting, updateSettings } = useSettings();
+  const { user, isReadonly } = useAuth();
+  const navigate = useNavigate();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
+  const [summaryMode, setSummaryMode] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importData, setImportData] = useState('');
+  const [importFrequency, setImportFrequency] = useState(() => getSetting('default_net_frequency', ''));
+  const [importMode, setImportMode] = useState('FM');
+  const [importStartTime, setImportStartTime] = useState(() => getSetting('default_net_time', ''));
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -72,9 +85,14 @@ const Sessions = () => {
         setSelectedNetControlUser('');
         setShowAddForm(false);
         
-        // Navigate to the session detail page for participant entry
-        const sessionId = response.data.id;
-        window.location.href = `/sessions/${sessionId}`;
+        if (summaryMode) {
+          // Stay on the sessions list page for summary-only entries
+          setSummaryMode(false);
+        } else {
+          // Navigate to the session detail page for participant entry
+          const sessionId = response.data.id;
+          window.location.href = `/sessions/${sessionId}`;
+        }
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to create session');
@@ -113,6 +131,58 @@ const Sessions = () => {
     }
   );
 
+  // Import summary sessions mutation
+  const importMutation = useMutation(
+    (payload) => axios.post('/api/sessions/import-summary', payload),
+    {
+      onSuccess: (response) => {
+        const { imported, failed, duplicates, total, operatorsCreated } = response.data;
+        queryClient.invalidateQueries('sessions');
+        
+        // If there are duplicates and we didn't already overwrite, ask the user
+        if (duplicates > 0 && !response.data.results?.some(r => r.overwritten)) {
+          const dupList = response.data.duplicates.map(d => `${d.callSign} on ${d.date}`).join(', ');
+          const doOverwrite = window.confirm(
+            `${duplicates} session(s) already exist:\n${dupList}\n\nOverwrite with imported data?`
+          );
+          if (doOverwrite) {
+            // Re-run with overwrite flag
+            importMutation.mutate({ data: importData, frequency: importFrequency, mode: importMode, start_time: importStartTime, overwrite: true });
+            return;
+          }
+        }
+        
+        if (imported > 0) {
+          let msg = `Imported ${imported} of ${total} sessions`;
+          if (operatorsCreated > 0) msg += ` (${operatorsCreated} new operators added via QRZ)`;
+          if (failed > 0) msg += ` — ${failed} failed`;
+          if (duplicates > 0) msg += ` — ${duplicates} skipped`;
+          toast.success(msg, { duration: 6000 });
+        } else if (duplicates > 0 && failed === 0) {
+          toast.success(`${duplicates} duplicate(s) skipped`);
+        }
+        if (failed > 0 && imported === 0 && duplicates === 0) {
+          toast.error(`All ${failed} lines failed to import`);
+        }
+        
+        // Show individual errors
+        if (response.data.errors?.length > 0) {
+          response.data.errors.slice(0, 5).forEach(err => {
+            toast.error(`Line ${err.line}: ${err.error}`, { duration: 6000 });
+          });
+        }
+        
+        if (imported > 0 || (duplicates > 0 && failed === 0)) {
+          setShowImport(false);
+          setImportData('');
+        }
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Import failed');
+      }
+    }
+  );
+
   const onSubmit = (data) => {
     if (editingSession) {
       updateSessionMutation.mutate({
@@ -127,9 +197,7 @@ const Sessions = () => {
   const handleEdit = (session) => {
     setEditingSession(session);
     // Convert database date to YYYY-MM-DD format for HTML date input
-    const sessionDate = new Date(session.session_date);
-    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
-    setValue('session_date', localDate.toISOString().split('T')[0]);
+    setValue('session_date', toDateInputValue(session.session_date));
     setValue('start_time', session.start_time || '');
     setValue('end_time', session.end_time || '');
     setValue('net_control_call', session.net_control_call);
@@ -158,6 +226,7 @@ const Sessions = () => {
     setEditingSession(null);
     setShowAddForm(false);
     setSelectedNetControlUser('');
+    setSummaryMode(false);
     reset();
   };
 
@@ -176,7 +245,20 @@ const Sessions = () => {
     setValue('net_type', 'Regular');
     setValue('mode', 'FM');
     
-    if (defaultNetControl) {
+    // Default net controller to logged-in user if they have a call sign
+    if (user?.callSign) {
+      const matchingUser = netControlUsers?.find(u => 
+        u.callSign?.toUpperCase() === user.callSign.toUpperCase()
+      );
+      if (matchingUser) {
+        setSelectedNetControlUser(String(matchingUser.id));
+        setValue('net_control_call', matchingUser.callSign);
+        setValue('net_control_name', matchingUser.name || matchingUser.username);
+      } else {
+        setValue('net_control_call', user.callSign);
+        setValue('net_control_name', user.name || user.username || '');
+      }
+    } else if (defaultNetControl) {
       setValue('net_control_call', defaultNetControl);
     }
     if (defaultFrequency) {
@@ -230,11 +312,16 @@ const Sessions = () => {
     }
   };
 
-  const getTodayDate = () => {
-    return new Date().toISOString().split('T')[0];
-  };
-
   const netTypes = ['Regular', 'Emergency', 'Training', 'Special Event', 'ARES/RACES'];
+
+  const canDeleteSession = (session) => {
+    if (user?.role === 'admin') return true;
+    const userCall = (user?.callSign || '').toUpperCase();
+    const sessionCall = (session.net_control_call || '').toUpperCase();
+    if (!userCall || userCall !== sessionCall) return false;
+    const hoursOld = (Date.now() - new Date(session.created_at).getTime()) / (1000 * 60 * 60);
+    return hoursOld <= 72;
+  };
   const modes = ['FM', 'AM', 'SSB', 'CW', 'Digital', 'DMR', 'D-STAR', 'System Fusion'];
 
   return (
@@ -266,6 +353,8 @@ const Sessions = () => {
             <Filter size={16} />
             Filters
           </button>
+          {!isReadonly() && (
+          <>
           <button 
             className="btn btn-primary"
             onClick={handleNewSession}
@@ -273,6 +362,32 @@ const Sessions = () => {
             <Plus size={16} />
             New Session
           </button>
+          <button 
+            className="btn btn-outline-primary"
+            onClick={() => {
+              handleNewSession();
+              setSummaryMode(true);
+            }}
+          >
+            <Plus size={16} />
+            Summary Only
+          </button>
+          <button 
+            className="btn btn-success"
+            onClick={() => navigate('/sessions/quick')}
+          >
+            <Plus size={16} />
+            Quick Entry
+          </button>
+          <button 
+            className="btn btn-outline-secondary"
+            onClick={() => setShowImport(true)}
+          >
+            <Upload size={16} />
+            Import
+          </button>
+          </>
+          )}
         </div>
       </div>
 
@@ -325,7 +440,7 @@ const Sessions = () => {
         <div className="card mb-4">
           <div className="card-header">
             <h2 className="card-title">
-              {editingSession ? 'Edit Session' : 'Create New Session'}
+              {editingSession ? 'Edit Session' : summaryMode ? 'Create Summary Session' : 'Create New Session'}
             </h2>
           </div>
           <div className="card-body">
@@ -336,7 +451,6 @@ const Sessions = () => {
                   <input
                     type="date"
                     className={`form-control ${errors.session_date ? 'error' : ''}`}
-                    defaultValue={getTodayDate()}
                     {...register('session_date', { 
                       required: 'Session date is required'
                     })}
@@ -481,6 +595,32 @@ const Sessions = () => {
                 />
               </div>
 
+              {/* Summary fields for participant/traffic counts */}
+              {summaryMode && (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Number of Participants</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min="0"
+                      placeholder="0"
+                      {...register('total_checkins')}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Number of Traffic Messages</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min="0"
+                      placeholder="0"
+                      {...register('total_traffic')}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="form-group">
                 <label className="form-label">Session Notes</label>
                 <textarea
@@ -504,7 +644,7 @@ const Sessions = () => {
                     </>
                   ) : (
                     <>
-                      {editingSession ? 'Update Session' : 'Create Session'}
+                      {editingSession ? 'Update Session' : summaryMode ? 'Save Summary' : 'Create Session'}
                     </>
                   )}
                 </button>
@@ -565,18 +705,22 @@ const Sessions = () => {
                         <td>
                           <div className="d-flex align-items-center">
                             <Calendar size={16} className="text-primary me-2" />
-                            <strong>{(() => {
-                              const sessionDate = new Date(session.session_date);
-                              const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
-                              return localDate.toLocaleDateString();
-                            })()}</strong>
+                            <strong>{formatDateLocal(session.session_date)}</strong>
                           </div>
                         </td>
                         <td>
                           <div>
                             <div className="d-flex align-items-center">
                               <Radio size={14} className="text-muted me-1" />
-                              <strong>{session.net_control_call}</strong>
+                              <strong>
+                                <a 
+                                  href="#" 
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/operators?search=${encodeURIComponent(session.net_control_call)}`); }}
+                                  style={{ textDecoration: 'none' }}
+                                >
+                                  {session.net_control_call}
+                                </a>
+                              </strong>
                             </div>
                             {session.net_control_name && (
                               <div className="text-muted small">
@@ -634,6 +778,7 @@ const Sessions = () => {
                             >
                               <Eye size={14} />
                             </button>
+                            {!isReadonly() && (
                             <button 
                               className="btn btn-sm btn-outline-primary"
                               onClick={() => handleEdit(session)}
@@ -641,6 +786,8 @@ const Sessions = () => {
                             >
                               <Edit size={14} />
                             </button>
+                            )}
+                            {!isReadonly() && canDeleteSession(session) && (
                             <button 
                               className="btn btn-sm btn-outline-danger"
                               onClick={() => handleDelete(session)}
@@ -648,6 +795,7 @@ const Sessions = () => {
                             >
                               <Trash2 size={14} />
                             </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -731,6 +879,116 @@ const Sessions = () => {
           )}
         </div>
       </div>
+
+      {/* Import Modal */}
+      {showImport && (
+        <div className="modal-overlay" onClick={() => setShowImport(false)}>
+          <div className="modal-dialog modal-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h4 className="modal-title">
+                  <Upload size={20} className="me-2" />
+                  Import Historical Net Sessions
+                </h4>
+                <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowImport(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="modal-body">
+                <div className="alert alert-info mb-3">
+                  <strong>Format:</strong> One session per line, space-separated fields:<br />
+                  <code>FirstName CallSign MM/DD/YYYY MsgNumber Participants Traffic Announce</code><br />
+                  <span className="small text-muted">Example: SCOTT N2SWJ 03/21/2026 54 45 1 Yes</span>
+                </div>
+
+                <div className="form-row mb-3">
+                  <div className="form-group">
+                    <label className="form-label">Default Frequency</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g., 146.520 MHz"
+                      value={importFrequency}
+                      onChange={(e) => setImportFrequency(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Default Mode</label>
+                    <select
+                      className="form-control"
+                      value={importMode}
+                      onChange={(e) => setImportMode(e.target.value)}
+                    >
+                      {['FM', 'AM', 'SSB', 'CW', 'Digital', 'DMR', 'D-STAR', 'System Fusion'].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Default Start Time</label>
+                    <input
+                      type="time"
+                      className="form-control"
+                      value={importStartTime}
+                      onChange={(e) => setImportStartTime(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group mb-3">
+                  <label className="form-label">Paste Data or Upload CSV</label>
+                  <textarea
+                    className="form-control"
+                    rows="12"
+                    placeholder={"SCOTT N2SWJ 03/21/2026 54 45 1 Yes\nJOHN W1AW 03/20/2026 53 38 2 No"}
+                    style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    value={importData}
+                    onChange={(e) => setImportData(e.target.value)}
+                  />
+                  <div className="d-flex justify-content-between mt-2">
+                    <div className="small text-muted">
+                      {importData.split('\n').filter(l => l.trim()).length} lines detected
+                    </div>
+                    <label className="btn btn-sm btn-outline-secondary mb-0">
+                      <Upload size={14} className="me-1" />
+                      Load from File
+                      <input
+                        type="file"
+                        accept=".csv,.txt"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setImportData(ev.target.result);
+                            reader.readAsText(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowImport(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => importMutation.mutate({ data: importData, frequency: importFrequency, mode: importMode, start_time: importStartTime })}
+                  disabled={importMutation.isLoading || !importData.trim()}
+                >
+                  {importMutation.isLoading ? (
+                    <><Loader size={16} className="animate-spin me-2" />Importing...</>
+                  ) : (
+                    <><Upload size={16} className="me-2" />Import Sessions</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
