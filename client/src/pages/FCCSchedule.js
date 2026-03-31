@@ -152,10 +152,10 @@ const FCCScheduleWorking = () => {
     const diffHours = Math.round(diffMs / (1000 * 60 * 60));
     
     if (diffHours < 24) {
-      return `${date.toLocaleTimeString()} (in ${diffHours} hours)`;
+      return `${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })} (in ${diffHours} hours)`;
     } else {
       const diffDays = Math.round(diffHours / 24);
-      return `${date.toLocaleDateString()} ${date.toLocaleTimeString()} (in ${diffDays} days)`;
+      return `${date.toLocaleDateString()} ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })} (in ${diffDays} days)`;
     }
   };
 

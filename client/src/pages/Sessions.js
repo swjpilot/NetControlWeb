@@ -27,11 +27,10 @@ import { formatDateLocal, toDateInputValue, getTodayDate } from '../utils/dateUt
 
 const Sessions = () => {
   const { getSetting, updateSettings } = useSettings();
-  const { user, isReadonly } = useAuth();
+  const { user, isReadonly, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
-  const [summaryMode, setSummaryMode] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importData, setImportData] = useState('');
   const [importFrequency, setImportFrequency] = useState(() => getSetting('default_net_frequency', ''));
@@ -85,14 +84,9 @@ const Sessions = () => {
         setSelectedNetControlUser('');
         setShowAddForm(false);
         
-        if (summaryMode) {
-          // Stay on the sessions list page for summary-only entries
-          setSummaryMode(false);
-        } else {
-          // Navigate to the session detail page for participant entry
-          const sessionId = response.data.id;
-          window.location.href = `/sessions/${sessionId}`;
-        }
+        // Navigate to the session detail page for participant entry
+        const sessionId = response.data.id;
+        window.location.href = `/sessions/${sessionId}`;
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to create session');
@@ -226,7 +220,6 @@ const Sessions = () => {
     setEditingSession(null);
     setShowAddForm(false);
     setSelectedNetControlUser('');
-    setSummaryMode(false);
     reset();
   };
 
@@ -363,22 +356,13 @@ const Sessions = () => {
             New Session
           </button>
           <button 
-            className="btn btn-outline-primary"
-            onClick={() => {
-              handleNewSession();
-              setSummaryMode(true);
-            }}
-          >
-            <Plus size={16} />
-            Summary Only
-          </button>
-          <button 
             className="btn btn-success"
             onClick={() => navigate('/sessions/quick')}
           >
             <Plus size={16} />
             Quick Entry
           </button>
+          {isAdmin() && (
           <button 
             className="btn btn-outline-secondary"
             onClick={() => setShowImport(true)}
@@ -386,6 +370,7 @@ const Sessions = () => {
             <Upload size={16} />
             Import
           </button>
+          )}
           </>
           )}
         </div>
@@ -440,7 +425,7 @@ const Sessions = () => {
         <div className="card mb-4">
           <div className="card-header">
             <h2 className="card-title">
-              {editingSession ? 'Edit Session' : summaryMode ? 'Create Summary Session' : 'Create New Session'}
+              {editingSession ? 'Edit Session' : 'Create New Session'}
             </h2>
           </div>
           <div className="card-body">
@@ -595,32 +580,6 @@ const Sessions = () => {
                 />
               </div>
 
-              {/* Summary fields for participant/traffic counts */}
-              {summaryMode && (
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Number of Participants</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      min="0"
-                      placeholder="0"
-                      {...register('total_checkins')}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Number of Traffic Messages</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      min="0"
-                      placeholder="0"
-                      {...register('total_traffic')}
-                    />
-                  </div>
-                </div>
-              )}
-
               <div className="form-group">
                 <label className="form-label">Session Notes</label>
                 <textarea
@@ -644,7 +603,7 @@ const Sessions = () => {
                     </>
                   ) : (
                     <>
-                      {editingSession ? 'Update Session' : summaryMode ? 'Save Summary' : 'Create Session'}
+                      {editingSession ? 'Update Session' : 'Create Session'}
                     </>
                   )}
                 </button>

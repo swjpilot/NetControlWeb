@@ -41,18 +41,19 @@ export function formatDateLocal(dateString, options) {
     const [year, month, day] = datePart.split('-').map(Number);
 
     if (!year || !month || !day) {
-      // Non-ISO format fallback
       return new Date(dateString).toLocaleDateString(undefined, options);
     }
 
-    // For date-only strings, create a noon UTC date so timezone offset never flips the day
-    const safeDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    const tz = getAppTimezone();
-    const fmt = new Intl.DateTimeFormat(undefined, {
-      ...options,
-      timeZone: tz
-    });
-    return fmt.format(safeDate);
+    // Format directly from parsed parts — no timezone conversion needed
+    // since we're working with date-only values (YYYY-MM-DD)
+    if (options) {
+      const safeDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+      const tz = getAppTimezone();
+      return new Intl.DateTimeFormat(undefined, { ...options, timeZone: tz || 'UTC' }).format(safeDate);
+    }
+
+    // Default format: M/D/YYYY
+    return `${month}/${day}/${year}`;
   } catch {
     return String(dateString);
   }
@@ -113,11 +114,11 @@ export function formatTimeLocal(timeOrDatetime) {
   if (!timeOrDatetime) return '';
   // If it's just a time string like "19:00", return as-is
   if (/^\d{2}:\d{2}(:\d{2})?$/.test(timeOrDatetime)) return timeOrDatetime;
-  // Full datetime — format in configured timezone
+  // Full datetime — format in 24h
   try {
     const tz = getAppTimezone();
     const date = new Date(timeOrDatetime);
-    return date.toLocaleTimeString(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('en-GB', { timeZone: tz || 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
   } catch {
     return timeOrDatetime;
   }

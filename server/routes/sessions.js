@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database/postgres-js-db');
-const { authenticateToken, requireWrite } = require('./auth-postgres-js');
+const { authenticateToken, requireWrite, requireAdmin } = require('./auth-postgres-js');
 
 // Debug endpoint to list all session IDs
 router.get('/debug/list-ids', authenticateToken, async (req, res) => {
@@ -367,23 +367,46 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
       return res.status(400).json({ error: 'Session date and net control call sign are required' });
     }
     
-    const result = await db.sql`
-      UPDATE sessions SET
-        session_date = ${session_date},
-        net_control_call = ${net_control_call.toUpperCase()},
-        net_control_name = ${net_control_name || null},
-        start_time = ${start_time || null},
-        end_time = ${end_time || null},
-        frequency = ${frequency || null},
-        mode = ${mode || 'FM'},
-        notes = ${notes || null},
-        weather_report = ${weather_report || null},
-        total_checkins = ${total_checkins || 0},
-        total_traffic = ${total_traffic || 0},
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${id}
-      RETURNING *
-    `;
+    // Only update counts if explicitly provided (don't reset to 0)
+    const checkins = total_checkins !== undefined && total_checkins !== null ? parseInt(total_checkins) : null;
+    const traffic = total_traffic !== undefined && total_traffic !== null ? parseInt(total_traffic) : null;
+
+    let result;
+    if (checkins !== null && traffic !== null) {
+      result = await db.sql`
+        UPDATE sessions SET
+          session_date = ${session_date},
+          net_control_call = ${net_control_call.toUpperCase()},
+          net_control_name = ${net_control_name || null},
+          start_time = ${start_time || null},
+          end_time = ${end_time || null},
+          frequency = ${frequency || null},
+          mode = ${mode || 'FM'},
+          notes = ${notes || null},
+          weather_report = ${weather_report || null},
+          total_checkins = ${checkins},
+          total_traffic = ${traffic},
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${id}
+        RETURNING *
+      `;
+    } else {
+      result = await db.sql`
+        UPDATE sessions SET
+          session_date = ${session_date},
+          net_control_call = ${net_control_call.toUpperCase()},
+          net_control_name = ${net_control_name || null},
+          start_time = ${start_time || null},
+          end_time = ${end_time || null},
+          frequency = ${frequency || null},
+          mode = ${mode || 'FM'},
+          notes = ${notes || null},
+          weather_report = ${weather_report || null},
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${id}
+        RETURNING *
+      `;
+    }
     
     if (result.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
@@ -907,13 +930,17 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
     const modeValue = modeMap[session.mode] || 1;
 
     // Build query params
+    // Use actual participant/traffic records if they exist, otherwise fall back to stored summary totals
+    const checkins = parseInt(session.checkin_count) > 0 ? parseInt(session.checkin_count) : (parseInt(session.total_checkins) || 0);
+    const traffic = parseInt(session.traffic_count) > 0 ? parseInt(session.traffic_count) : (parseInt(session.total_traffic) || 0);
+
     const params = new URLSearchParams({
       f: firstName,
       s: (session.net_control_call || '').toLowerCase(),
       d: formattedDate,
       m: modeValue,
-      c: parseInt(session.checkin_count) || 0,
-      t: parseInt(session.traffic_count) || 0,
+      c: checkins,
+      t: traffic,
       a: 'Yes'
     });
 
@@ -962,7 +989,7 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
 });
 
 // Import historical summary sessions from CSV/text data
-router.post('/import-summary', authenticateToken, requireWrite, async (req, res) => {
+router.post('/import-summary', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { data, frequency, mode, start_time, overwrite } = req.body;
 

@@ -2879,7 +2879,7 @@ const SessionDetail = () => {
                         >
                           <td>
                             <div className="small text-muted">
-                              {new Date(traffic.created_at).toLocaleTimeString()}
+                              {new Date(traffic.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
                             </div>
                           </td>
                           <td>
