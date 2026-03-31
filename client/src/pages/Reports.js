@@ -88,6 +88,12 @@ const Reports = () => {
       name: 'NC Statistics',
       icon: BarChart3,
       description: 'Net controller performance statistics'
+    },
+    {
+      id: 'attendance-heatmap',
+      name: 'Attendance Heatmap',
+      icon: Calendar,
+      description: 'Visual calendar of check-in density'
     }
   ];
 
@@ -1014,6 +1020,7 @@ const OtherReports = ({ activeReport, reportTypes, data, isLoading, startDate, e
         {activeReport === 'traffic-report' && <TrafficReport data={data} />}
         {activeReport === 'net-controller-contacts' && <NetControllerContactsReport data={data} />}
         {activeReport === 'nc-statistics' && <NCStatisticsReport data={data} />}
+        {activeReport === 'attendance-heatmap' && <AttendanceHeatmapReport data={data} />}
       </div>
     </div>
   );
@@ -2002,6 +2009,108 @@ const NCStatisticsReport = ({ data }) => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// Attendance Heatmap Report Component
+const AttendanceHeatmapReport = ({ data }) => {
+  if (!data || !data.heatmap || data.heatmap.length === 0) {
+    return (
+      <div className="text-center py-5 text-muted">
+        <Calendar size={48} className="mb-3 opacity-50" />
+        <p>No attendance data available for this period.</p>
+      </div>
+    );
+  }
+
+  const { heatmap } = data;
+
+  // Build a map of date -> checkins
+  const dateMap = {};
+  let maxCheckins = 0;
+  heatmap.forEach(row => {
+    const dateStr = String(row.session_date).split('T')[0];
+    const count = parseInt(row.checkins) || 0;
+    dateMap[dateStr] = count;
+    if (count > maxCheckins) maxCheckins = count;
+  });
+
+  // Get date range
+  const dates = Object.keys(dateMap).sort();
+  if (dates.length === 0) return <p>No data</p>;
+
+  const startDate = new Date(dates[0] + 'T12:00:00Z');
+  const endDate = new Date(dates[dates.length - 1] + 'T12:00:00Z');
+
+  // Build weeks
+  const weeks = [];
+  const current = new Date(startDate);
+  current.setUTCDate(current.getUTCDate() - current.getUTCDay()); // Start on Sunday
+  while (current <= endDate || weeks.length === 0) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      const key = current.toISOString().split('T')[0];
+      week.push({ date: key, count: dateMap[key] || 0, hasData: key in dateMap });
+      current.setUTCDate(current.getUTCDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  const getColor = (count) => {
+    if (count === 0) return 'var(--bs-gray-200, #e9ecef)';
+    const intensity = Math.min(count / Math.max(maxCheckins, 1), 1);
+    const g = Math.round(180 - intensity * 140);
+    return 'rgb(40, ' + g + ', 60)';
+  };
+
+  const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  return (
+    <div>
+      <h5 className="mb-3">Attendance Heatmap</h5>
+      <p className="text-muted small">{heatmap.length} sessions in period. Darker = more check-ins (max: {maxCheckins})</p>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ display: 'inline-flex', gap: '2px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginRight: '4px' }}>
+            {dayLabels.map((d, i) => (
+              <div key={i} style={{ width: '14px', height: '14px', fontSize: '9px', lineHeight: '14px', textAlign: 'center', color: 'var(--text-muted, #6c757d)' }}>{d}</div>
+            ))}
+          </div>
+          {weeks.map((week, wi) => (
+            <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {week.map((day, di) => (
+                <div
+                  key={di}
+                  title={day.date + ': ' + day.count + ' check-ins'}
+                  style={{
+                    width: '14px', height: '14px', borderRadius: '2px',
+                    backgroundColor: day.hasData ? getColor(day.count) : 'var(--bs-gray-100, #f8f9fa)',
+                    border: '1px solid var(--bs-gray-300, #dee2e6)',
+                    cursor: 'default'
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3">
+        <h6>Daily Breakdown</h6>
+        <div className="table-responsive">
+          <table className="table table-sm">
+            <thead><tr><th>Date</th><th>Check-ins</th></tr></thead>
+            <tbody>
+              {heatmap.map(row => (
+                <tr key={row.session_date}>
+                  <td>{formatDateLocal(row.session_date)}</td>
+                  <td><span className="badge bg-primary">{parseInt(row.checkins)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };

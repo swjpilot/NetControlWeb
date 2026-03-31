@@ -59,6 +59,7 @@ const SessionDetail = () => {
   const [preferredNameValue, setPreferredNameValue] = useState('');
   const [groupAck, setGroupAck] = useState({1: false, 2: false, 3: false, 4: false, 5: false, 6: false});
   const [participantSearch, setParticipantSearch] = useState('');
+  const [elapsedTime, setElapsedTime] = useState('');
   const { getSetting } = useSettings();
 
   // Fetch tomorrow's scheduled net for script variables
@@ -109,6 +110,28 @@ const SessionDetail = () => {
       enabled: !!id
     }
   );
+
+  // Running session timer
+  useEffect(() => {
+    if (!sessionData?.start_time || sessionData?.end_time) {
+      setElapsedTime('');
+      return;
+    }
+    const updateTimer = () => {
+      const now = new Date();
+      const [h, m, s] = sessionData.start_time.split(':').map(Number);
+      const start = new Date();
+      start.setHours(h, m, s || 0, 0);
+      const diff = Math.max(0, Math.floor((now - start) / 1000));
+      const hrs = Math.floor(diff / 3600);
+      const mins = Math.floor((diff % 3600) / 60);
+      const secs = diff % 60;
+      setElapsedTime((hrs > 0 ? hrs + ':' : '') + String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0'));
+    };
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [sessionData?.start_time, sessionData?.end_time]);
 
   // Fetch operators for dropdowns
   const { data: operatorsData } = useQuery(
@@ -1534,6 +1557,14 @@ const SessionDetail = () => {
               <><Send size={16} className="me-2" />Submit Net Report</>
             )}
           </button>
+          <button
+            className="btn btn-outline-secondary"
+            onClick={() => {
+              window.open('/api/sessions/' + id + '/export-csv', '_blank');
+            }}
+          >
+            <Download size={16} className="me-2" />Export CSV
+          </button>
         </div>
       </div>
 
@@ -1588,6 +1619,42 @@ const SessionDetail = () => {
                           <Square size={12} className="me-1" />
                           {sessionData.end_time}
                         </span>
+                      )}
+                      {elapsedTime && (
+                        <span className="badge bg-success ms-2" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                          {elapsedTime}
+                        </span>
+                      )}
+                      {sessionData.start_time && !sessionData.end_time && (
+                        <button
+                          className="btn btn-sm btn-outline-danger ms-2"
+                          onClick={async () => {
+                            const endTime = new Date().toTimeString().slice(0, 8);
+                            try {
+                              await axios.put('/api/sessions/' + id, {
+                                ...sessionData,
+                                end_time: endTime,
+                                net_control_call: sessionData.net_control_call
+                              });
+                              queryClient.invalidateQueries(['session', id]);
+                              toast.success('Net ended at ' + endTime);
+                              // Ask to submit net report
+                              if (window.confirm('Submit net report now?')) {
+                                try {
+                                  await axios.post('/api/sessions/' + id + '/submit-net-report');
+                                  toast.success('Net report submitted');
+                                } catch (re) {
+                                  toast.error(re.response?.data?.error || 'Net report submission failed');
+                                }
+                              }
+                            } catch (e) {
+                              toast.error('Failed to end net');
+                            }
+                          }}
+                        >
+                          <Square size={12} className="me-1" />
+                          End Net
+                        </button>
                       )}
                     </span>
                   </div>

@@ -869,6 +869,43 @@ router.post('/fix-traffic-counts', async (req, res) => {
   }
 });
 
+// Export session participants as CSV
+router.get('/:id/export-csv', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const session = await db.sql`SELECT session_date, net_control_call FROM sessions WHERE id = ${id}`;
+    if (session.length === 0) return res.status(404).json({ error: 'Session not found' });
+
+    const participants = await db.sql`
+      SELECT sp.call_sign, COALESCE(sp.name, o.name) as name,
+             o.preferred_name, sp.check_in_time, sp.check_out_time,
+             o.city, o.state, o.license_class, sp.notes,
+             sp.flag_comment, sp.flag_traffic, sp.flag_echolink, sp.flag_announcement
+      FROM session_participants sp
+      LEFT JOIN operators o ON sp.operator_id = o.id
+      WHERE sp.session_id = ${id}
+      ORDER BY sp.check_in_time ASC
+    `;
+
+    const header = 'Call Sign,Name,Preferred Name,Check-In,Check-Out,City,State,License,Notes,Comment,Traffic,Echolink,Announcement';
+    const rows = participants.map(p =>
+      [p.call_sign, p.name || '', p.preferred_name || '', p.check_in_time || '', p.check_out_time || '',
+       p.city || '', p.state || '', p.license_class || '', (p.notes || '').replace(/,/g, ';'),
+       p.flag_comment ? 'Y' : '', p.flag_traffic ? 'Y' : '', p.flag_echolink ? 'Y' : '', p.flag_announcement ? 'Y' : ''
+      ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
+    );
+
+    const csv = header + '\n' + rows.join('\n');
+    const dateStr = String(session[0].session_date).split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="session-' + dateStr + '-' + session[0].net_control_call + '.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error('Export CSV error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Submit net report to external URL
 router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
   try {

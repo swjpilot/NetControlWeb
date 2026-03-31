@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { formatDateLocal } from '../utils/dateUtils';
@@ -27,6 +28,7 @@ import OperatorMap from '../components/OperatorMap';
 
 const Operators = () => {
   const { getSetting, updateSettings } = useSettings();
+  const { isAdmin } = useAuth();
   const [searchParams] = useSearchParams();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
@@ -331,6 +333,28 @@ const Operators = () => {
             <Plus size={16} />
             Add Operator
           </button>
+          {isAdmin() && (
+          <button 
+            className="btn btn-outline-secondary"
+            onClick={async () => {
+              if (!window.confirm('Update ALL active operators from QRZ? This may take several minutes.')) return;
+              toast.loading('Bulk QRZ update in progress...', { id: 'bulk-qrz' });
+              try {
+                const res = await axios.post('/api/operators/bulk-qrz-update');
+                toast.dismiss('bulk-qrz');
+                toast.success(`Updated ${res.data.updated} of ${res.data.total} operators (${res.data.failed} failed, ${res.data.skipped} not found)`, { duration: 8000 });
+                queryClient.invalidateQueries('operators');
+              } catch (e) {
+                toast.dismiss('bulk-qrz');
+                toast.error(e.response?.data?.error || 'Bulk update failed');
+              }
+            }}
+            title="Update all operators from QRZ"
+          >
+            <RefreshCw size={16} />
+            Bulk QRZ
+          </button>
+          )}
         </div>
       </div>
 
@@ -563,6 +587,8 @@ const Operators = () => {
                         License <SortIndicator field="class" />
                       </th>
                       <th>Contact</th>
+                      <th>Last Seen</th>
+                      <th>Check-ins</th>
                       <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOperatorSort('updated_at')}>
                         Last Updated <SortIndicator field="updated_at" />
                       </th>
@@ -642,6 +668,12 @@ const Operators = () => {
                               </div>
                             )}
                           </div>
+                        </td>
+                        <td>
+                          <span className="small">{operator.last_seen ? formatDateLocal(operator.last_seen) : '-'}</span>
+                        </td>
+                        <td>
+                          <span className="badge bg-secondary">{operator.checkin_count || 0}</span>
                         </td>
                         <td>
                           <div className="d-flex align-items-center small text-muted">

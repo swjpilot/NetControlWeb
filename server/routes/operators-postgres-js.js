@@ -47,7 +47,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     
     // Get total count
-    const countQuery = 'SELECT COUNT(*) as count FROM operators ' + whereClause;
+    const countQuery = 'SELECT COUNT(*) as count FROM operators o ' + (whereClause ? whereClause.replace(/\bcall_sign\b/g, 'o.call_sign').replace(/\bname\b/g, 'o.name').replace(/\bcity\b/g, 'o.city').replace(/\baddress\b/g, 'o.address').replace(/\blicense_class\b/g, 'o.license_class') : '');
     const countResult = await db.sql.unsafe(countQuery, searchParams);
     const total = parseInt(countResult[0].count);
     
@@ -55,23 +55,29 @@ router.get('/', authenticateToken, async (req, res) => {
     const limitParam = '$' + (searchParams.length + 1);
     const offsetParam = '$' + (searchParams.length + 2);
     const dataQuery =
-      'SELECT id, call_sign, name, email, phone, ' +
-      'address as street, ' +
+      'SELECT o.id, o.call_sign, o.name, o.email, o.phone, ' +
+      'o.address as street, ' +
       'CASE ' +
-        'WHEN city IS NOT NULL AND state IS NOT NULL THEN CONCAT(city, \', \', state) ' +
-        'WHEN city IS NOT NULL THEN city ' +
-        'WHEN state IS NOT NULL THEN state ' +
+        'WHEN o.city IS NOT NULL AND o.state IS NOT NULL THEN CONCAT(o.city, \', \', o.state) ' +
+        'WHEN o.city IS NOT NULL THEN o.city ' +
+        'WHEN o.state IS NOT NULL THEN o.state ' +
         'ELSE NULL ' +
       'END as location, ' +
-      'city, state, zip, ' +
-      'license_class as class, ' +
-      'preferred_name, ' +
-      'active, ' +
-      'notes as comment, ' +
-      'created_at, updated_at ' +
-      'FROM operators ' +
-      whereClause + ' ' +
-      'ORDER BY ' + sortField + ' ' + sortOrder + ' ' +
+      'o.city, o.state, o.zip, ' +
+      'o.license_class as class, ' +
+      'o.preferred_name, ' +
+      'o.active, ' +
+      'o.notes as comment, ' +
+      'o.created_at, o.updated_at, ' +
+      'stats.last_seen, stats.total_checkins as checkin_count ' +
+      'FROM operators o ' +
+      'LEFT JOIN (' +
+        'SELECT sp.operator_id, MAX(s.session_date) as last_seen, COUNT(*) as total_checkins ' +
+        'FROM session_participants sp JOIN sessions s ON sp.session_id = s.id ' +
+        'GROUP BY sp.operator_id' +
+      ') stats ON o.id = stats.operator_id ' +
+      (whereClause ? whereClause.replace(/\bcall_sign\b/g, 'o.call_sign').replace(/\bname\b/g, 'o.name').replace(/\bcity\b/g, 'o.city').replace(/\baddress\b/g, 'o.address').replace(/\blicense_class\b/g, 'o.license_class') : '') + ' ' +
+      'ORDER BY ' + (sortField === 'call_sign' || sortField === 'name' || sortField === 'city' || sortField === 'license_class' || sortField === 'updated_at' ? 'o.' + sortField : sortField) + ' ' + sortOrder + ' ' +
       'LIMIT ' + limitParam + ' OFFSET ' + offsetParam;
     searchParams.push(parseInt(limit), parseInt(offset));
     
@@ -436,6 +442,73 @@ router.post('/:id/update-from-qrz', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Update from QRZ error:', error);
     res.status(500).json({ error: error.message || 'QRZ update failed' });
+  }
+});
+
+// Bulk update all operators from QRZ
+router.post('/bulk-qrz-update', authenticateToken, async (req, res) => {
+  try {
+    const { requireAdmin } = require('./auth-postgres-js');
+    // Check admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const allOperators = await db.sql`SELECT id, call_sign, preferred_name FROM operators WHERE active = true ORDER BY call_sign`;
+    const { getQRZSession, mapLicenseClass } = require('./qrz-postgres-js');
+    const axios = require('axios');
+    const xml2js = require('xml2js');
+
+    let updated = 0, failed = 0, skipped = 0;
+    const results = [];
+
+    for (const operator of allOperators) {
+      try {
+        const sessionKey = await getQRZSession();
+        const response = await axios.get('https://xmldata.qrz.com/xml/current/', {
+          params: { s: sessionKey, callsign: operator.call_sign.toUpperCase() },
+          timeout: 10000
+        });
+        const parser = new xml2js.Parser();
+        const result = await parser.parseStringPromise(response.data);
+
+        if (!result.QRZDatabase || !result.QRZDatabase.Callsign || !result.QRZDatabase.Callsign[0]) {
+          skipped++;
+          results.push({ call_sign: operator.call_sign, status: 'not_found' });
+          continue;
+        }
+
+        const qrz = result.QRZDatabase.Callsign[0];
+        const qrzFullName = [qrz.fname ? qrz.fname[0] : '', qrz.name ? qrz.name[0] : ''].filter(Boolean).join(' ');
+
+        await db.sql`
+          UPDATE operators SET
+            name = ${qrzFullName || operator.name},
+            preferred_name = ${operator.preferred_name || null},
+            address = ${qrz.addr1 ? qrz.addr1[0] : null},
+            city = ${qrz.addr2 ? qrz.addr2[0] : null},
+            state = ${qrz.state ? qrz.state[0] : null},
+            zip = ${qrz.zip ? qrz.zip[0] : null},
+            email = ${qrz.email ? qrz.email[0] : null},
+            license_class = ${qrz.class ? mapLicenseClass(qrz.class[0]) : null},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${operator.id}
+        `;
+        updated++;
+        results.push({ call_sign: operator.call_sign, status: 'updated' });
+
+        // Small delay to avoid QRZ rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (e) {
+        failed++;
+        results.push({ call_sign: operator.call_sign, status: 'error', error: e.message });
+      }
+    }
+
+    res.json({ success: true, total: allOperators.length, updated, failed, skipped, results });
+  } catch (error) {
+    console.error('Bulk QRZ update error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

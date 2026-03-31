@@ -813,5 +813,28 @@ router.get('/nc-statistics', authenticateToken, async (req, res) => {
   }
 });
 
+// Attendance heatmap data
+router.get('/attendance-heatmap', authenticateToken, async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    if (!start_date || !end_date) return res.status(400).json({ error: 'start_date and end_date required' });
+
+    const data = await db.sql`
+      SELECT s.session_date, 
+             GREATEST(COUNT(DISTINCT sp.id), COALESCE(s.total_checkins, 0)) as checkins
+      FROM sessions s
+      LEFT JOIN session_participants sp ON s.id = sp.session_id
+      WHERE s.session_date >= ${start_date} AND s.session_date <= ${end_date}
+      GROUP BY s.id, s.session_date, s.total_checkins
+      ORDER BY s.session_date
+    `;
+
+    res.json({ heatmap: data });
+  } catch (error) {
+    console.error('Heatmap error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
 module.exports.sendMonthlyReportEmail = sendMonthlyReportEmail;

@@ -203,6 +203,8 @@ const Sessions = () => {
     setValue('weather', session.weather || '');
     setValue('notes', session.notes || '');
     setValue('net_type', session.net_type || 'Regular');
+    setValue('total_checkins', session.participant_count || session.total_checkins || '');
+    setValue('total_traffic', session.traffic_count || session.total_traffic || '');
     
     // Reset the net control user dropdown when editing
     setSelectedNetControlUser('');
@@ -579,6 +581,34 @@ const Sessions = () => {
                   {...register('weather')}
                 />
               </div>
+
+              {/* Totals fields — shown when editing so summary sessions can be updated */}
+              {editingSession && (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Total Participants</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min="0"
+                      placeholder="0"
+                      {...register('total_checkins')}
+                    />
+                    <div className="form-text">Override count (for summary-only sessions)</div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Total Traffic</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min="0"
+                      placeholder="0"
+                      {...register('total_traffic')}
+                    />
+                    <div className="form-text">Override count (for summary-only sessions)</div>
+                  </div>
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Session Notes</label>
