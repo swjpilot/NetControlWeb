@@ -349,6 +349,10 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete your own account' });
     }
     
+    // Clear foreign key references before deleting
+    await db.sql`UPDATE users SET created_by = NULL WHERE created_by = ${id}`;
+    await db.sql`DELETE FROM net_schedule_assignments WHERE user_id = ${id}`;
+    
     const result = await db.sql`
       DELETE FROM users WHERE id = ${id} RETURNING *
     `;
@@ -361,7 +365,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

@@ -7,7 +7,7 @@ let scheduledTask = null;
 async function getSchedulerSettings() {
   const rows = await db.sql`
     SELECT key, value FROM settings
-    WHERE key IN ('monthly_report_enabled', 'monthly_report_day', 'monthly_report_time', 'monthly_report_timezone', 'monthly_report_callsign', 'arrl_section_email')
+    WHERE key IN ('monthly_report_enabled', 'monthly_report_day', 'monthly_report_time', 'monthly_report_timezone', 'monthly_report_callsign', 'arrl_section_email', 'app_timezone')
   `;
   const settings = {};
   rows.forEach(r => { settings[r.key] = r.value; });
@@ -45,7 +45,7 @@ async function startScheduler() {
     }
 
     const cronExpr = buildCronExpression(settings.monthly_report_day, settings.monthly_report_time);
-    const timezone = settings.monthly_report_timezone || undefined;
+    const timezone = settings.monthly_report_timezone || settings.app_timezone || 'America/New_York';
     console.log('Monthly report scheduler: starting with cron', cronExpr, timezone ? ('tz=' + timezone) : '(server default)');
 
     const cronOptions = { scheduled: true };

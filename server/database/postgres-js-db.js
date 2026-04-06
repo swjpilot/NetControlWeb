@@ -29,7 +29,7 @@ class Database {
           username VARCHAR(255) NOT NULL UNIQUE,
           password_hash VARCHAR(255) NOT NULL,
           email VARCHAR(255) UNIQUE,
-          role VARCHAR(50) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin', 'readonly')),
+          role VARCHAR(50) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
           call_sign VARCHAR(20),
           name VARCHAR(255),
           phone_number VARCHAR(20),
@@ -135,12 +135,10 @@ class Database {
       // Migration: Add operator_id column if it doesn't exist
       try {
         await this.sql`ALTER TABLE session_participants ADD COLUMN IF NOT EXISTS operator_id INTEGER REFERENCES operators(id)`;
-        await this.sql`ALTER TABLE operators ADD COLUMN IF NOT EXISTS preferred_name VARCHAR(100)`;
-        await this.sql`ALTER TABLE session_participants ADD COLUMN IF NOT EXISTS acknowledged BOOLEAN DEFAULT FALSE`;
-        console.log('Migration: Added operator_id, preferred_name, acknowledged columns');
+        console.log('Migration: Added operator_id column to session_participants table');
       } catch (error) {
         // Column might already exist, ignore error
-        console.log('Migration: columns already exist or migration failed:', error.message);
+        console.log('Migration: operator_id column already exists or migration failed:', error.message);
       }
 
       // Session traffic table
@@ -353,7 +351,6 @@ class Database {
         ['default_net_power', '', 'Default net power'],
         ['default_grid_square', '', 'Default grid square'],
         ['distance_unit', 'miles', 'Distance unit (miles or kilometers)'],
-        ['app_timezone', 'America/New_York', 'Application timezone'],
         
         // SMTP/Email settings
         ['smtp_host', '', 'SMTP server hostname'],
@@ -372,8 +369,7 @@ class Database {
         
         // Pre-check-in settings
         ['precheckin_url', 'https://brars.hamsunite.org/api/pre-checkin', 'BRARS Pre-check-in API URL'],
-        ['netreport_url', 'https://brars.hamsonair.com/cgi-bin/netReport', 'Net Report submission URL'],
-        ['net_script_template', '', 'Net script template with variable placeholders'],
+        ['netreport_url', 'https://brars.hamsunite.org/cgi-bin/netReport', 'Net Report submission URL'],
         
         // UI settings
         ['theme', 'light', 'UI theme (light, dark, auto)'],
@@ -382,6 +378,7 @@ class Database {
         // Database settings
         ['auto_backup_enabled', 'false', 'Enable automatic database backups'],
         ['auto_backup_interval', '24', 'Backup interval in hours'],
+        ['backup_time', '02:00', 'Time to run daily backup'],
         ['backup_s3_bucket', '', 'S3 bucket for backups'],
         ['backup_s3_prefix', 'netcontrol-backups/', 'S3 key prefix for backups'],
         ['auto_backup_s3_enabled', 'false', 'Automatically backup to S3'],

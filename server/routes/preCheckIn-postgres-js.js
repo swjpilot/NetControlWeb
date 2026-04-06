@@ -274,8 +274,16 @@ router.post('/process', authenticateToken, async (req, res) => {
         }
         
         // Calculate check-in time for this participant (base + offset seconds)
+        // Use configured app timezone instead of server UTC
         const checkInDate = new Date(baseTime.getTime() + (timeOffset * 1000));
-        const checkInTime = checkInDate.toTimeString().slice(0, 8); // HH:MM:SS
+        let checkInTime;
+        try {
+          const tzSetting = await db.sql`SELECT value FROM settings WHERE key = 'app_timezone'`;
+          const tz = tzSetting.length > 0 && tzSetting[0].value ? tzSetting[0].value : 'America/New_York';
+          checkInTime = checkInDate.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        } catch (e) {
+          checkInTime = checkInDate.toTimeString().slice(0, 8);
+        }
         timeOffset++;
         
         // Check if participant already exists in this session
@@ -295,7 +303,7 @@ router.post('/process', authenticateToken, async (req, res) => {
         let hasQRZData = false;
         let resolvedName = firstName || null;
         let operatorExists = await db.sql`
-          SELECT id, name FROM operators WHERE call_sign = ${callSign.toUpperCase()}
+          SELECT id, name, preferred_name FROM operators WHERE call_sign = ${callSign.toUpperCase()}
         `;
         
         if (operatorExists.length === 0) {
@@ -339,8 +347,17 @@ router.post('/process', authenticateToken, async (req, res) => {
           }
         } else {
           operatorId = operatorExists[0].id;
-          // Use the operator's full name from the database
           resolvedName = operatorExists[0].name || firstName || null;
+
+          // If pre-check-in first name differs from operator's first name,
+          // set it as preferred name (only if preferred_name isn't already set)
+          if (firstName && !operatorExists[0].preferred_name) {
+            const opFirstName = (operatorExists[0].name || '').split(' ')[0].toLowerCase();
+            const preFirstName = firstName.trim().toLowerCase();
+            if (opFirstName && preFirstName && opFirstName !== preFirstName) {
+              await db.sql`UPDATE operators SET preferred_name = ${firstName.trim()} WHERE id = ${operatorId}`;
+            }
+          }
         }
         
         // Add participant to session with operator link

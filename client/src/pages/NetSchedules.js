@@ -746,7 +746,8 @@ const NetSchedules = () => {
                           <div className="mt-2">
                             {isAdmin() && (
                               <select
-                                className="form-select form-select-sm d-inline-block w-auto"
+                                className="form-select form-select-sm"
+                                style={{ minWidth: '200px', maxWidth: '100%' }}
                                 onChange={(e) => {
                                   if (e.target.value) {
                                     handleAddAssignment(schedule.id, e.target.value);

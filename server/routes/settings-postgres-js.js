@@ -48,7 +48,7 @@ router.put('/', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Restart backup scheduler if relevant settings changed
-    const backupKeys = ['auto_backup_enabled', 'auto_backup_interval', 'auto_backup_s3_enabled'];
+    const backupKeys = ['auto_backup_enabled', 'auto_backup_interval', 'auto_backup_s3_enabled', 'backup_time'];
     const hasBackupChange = Object.keys(settings).some(k => backupKeys.includes(k));
     if (hasBackupChange) {
       try {

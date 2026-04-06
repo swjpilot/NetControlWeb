@@ -66,12 +66,15 @@ const SessionDetail = () => {
   const { data: upcomingData } = useQuery(
     'upcoming-nets-tomorrow',
     () => {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const startDate = tomorrow.toISOString().split('T')[0];
+      // Calculate tomorrow in the app timezone
+      const tz = getAppTimezone() || 'America/New_York';
+      const nowInTz = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+      nowInTz.setDate(nowInTz.getDate() + 1);
+      const startDate = nowInTz.getFullYear() + '-' + String(nowInTz.getMonth() + 1).padStart(2, '0') + '-' + String(nowInTz.getDate()).padStart(2, '0');
       return axios.get('/api/schedules/calendar/upcoming', { params: { days: 1, start_date: startDate } }).then(res => res.data);
     }
   );
+
   const [participantFlags, setParticipantFlags] = useState({
     flag_comment: false,
     flag_traffic: false,
@@ -197,71 +200,6 @@ const SessionDetail = () => {
     return <span className="ms-1">{participantSort.direction === 'asc' ? '▲' : '▼'}</span>;
   };
 
-  // Process net script template with session data
-  const processNetScript = () => {
-    const template = getSetting('net_script_template', '');
-    if (!template || !sessionData) return '';
-    
-    const localDate = parseDateLocal(sessionData.session_date);
-    
-    // Look up net controller's city from operators list using the session's actual net control call
-    const ncOperator = operators.find(op => 
-      op.call_sign?.toUpperCase() === (sessionData.net_control_call || '').toUpperCase()
-    );
-    
-    // Get tomorrow's scheduled net controller
-    const tomorrowNets = upcomingData?.upcoming_nets || [];
-    const tomorrowNet = tomorrowNets[0]; // First scheduled net for tomorrow
-    const tomorrowFirstName = tomorrowNet?.assigned_operator?.name ? tomorrowNet.assigned_operator.name.split(' ')[0] : '';
-    const tomorrowCallSign = tomorrowNet?.assigned_operator?.call_sign || '';
-    
-    const vars = {
-      '{FIRSTNAME}': (sessionData.net_control_name || '').split(' ')[0] || '',
-      '{FULLNAME}': sessionData.net_control_name || '',
-      '{CALLSIGN}': sessionData.net_control_call || '',
-      '{CITY}': ncOperator?.city || '',
-      '{STATE}': ncOperator?.state || '',
-      '{LOCATION}': ncOperator?.location || [ncOperator?.city, ncOperator?.state].filter(Boolean).join(', ') || '',
-      '{DATE}': formatDateLocal(sessionData.session_date),
-      '{DAY_OF_WEEK}': (() => {
-        const tz = getAppTimezone();
-        return localDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
-      })(),
-      // Group rotation: 6 groups rotate by day of week
-      // {STARTING_GROUP} = first group, {GROUP_1}..{GROUP_6} = all positions in order
-      ...(() => {
-        const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
-        const tz = getAppTimezone();
-        const dayName = localDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
-        const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
-        const startIdx = dayStartIndex[dayName] || 0;
-        const result = {};
-        for (let i = 0; i < 6; i++) {
-          result[`{GROUP_${i + 1}}`] = groups[(startIdx + i) % 6];
-        }
-        result['{STARTING_GROUP}'] = result['{GROUP_1}'];
-        return result;
-      })(),
-      '{TOMORROW_FIRSTNAME}': tomorrowFirstName,
-      '{TOMORROW_CALLSIGN}': tomorrowCallSign,
-      '{FREQUENCY}': sessionData.frequency || '',
-      '{MODE}': sessionData.mode || 'FM',
-      '{NET_TYPE}': sessionData.net_type || 'Regular',
-      '{CHECKINS}': String(sessionData.participants?.length || 0),
-      '{TRAFFIC}': String(sessionData.traffic?.length || 0),
-      '{START_TIME}': sessionData.start_time || '',
-      '{END_TIME}': sessionData.end_time || '',
-      '{POWER}': sessionData.power || '',
-      '{ANTENNA}': sessionData.antenna || '',
-    };
-    
-    let result = template;
-    Object.entries(vars).forEach(([key, value]) => {
-      result = result.replaceAll(key, value);
-    });
-    return result;
-  };
-
   // QRZ lookup mutation (defined early to avoid use-before-define issues)
   const qrzLookupMutation = useMutation(
     (callSign) => axios.get(`/api/qrz/lookup/${callSign}`),
@@ -303,35 +241,12 @@ const SessionDetail = () => {
         
         toast.success(`Found information for ${mappedData.callsign}`);
       },
-      onError: async (error) => {
+      onError: (error) => {
         const message = error.response?.data?.error || 'QRZ lookup failed';
+        toast.error(message);
         setQrzLookupData(null);
         
-        // Try FCC database as fallback before showing manual entry
-        try {
-          const fccResponse = await axios.get(`/api/fcc/search/${callSignInput.toUpperCase()}`);
-          if (fccResponse.data && fccResponse.data.callsign) {
-            const fccData = fccResponse.data;
-            const mappedData = {
-              callsign: fccData.callsign || fccData.call_sign,
-              name: [fccData.first_name, fccData.last_name].filter(Boolean).join(' ') || fccData.name,
-              city: fccData.city,
-              state: fccData.state,
-              licenseClass: fccData.license_class || fccData.radio_service_desc,
-              grid: fccData.grid_square,
-              email: ''
-            };
-            setQrzLookupData(mappedData);
-            participantForm.setValue('call_sign', mappedData.callsign);
-            toast.success(`Found ${mappedData.callsign} in FCC database`);
-            return;
-          }
-        } catch (fccError) {
-          // FCC lookup also failed
-        }
-        
-        // Both QRZ and FCC failed — show manual entry
-        toast.error(message + ' (FCC lookup also failed)');
+        // Show manual entry form if QRZ lookup fails
         setShowManualEntry(true);
         setManualEntryData({
           name: '',
@@ -344,33 +259,34 @@ const SessionDetail = () => {
   );
 
   // Filter operators based on call sign input
+  // Extract just the call sign portion (strip /C /T /E /A flags) for lookups
+  const callSignOnly = callSignInput.split('/')[0].trim();
+
   useEffect(() => {
-    if (callSignInput.length >= 2) {
+    if (callSignOnly.length >= 2) {
       const filtered = operators.filter(op => 
-        op.call_sign.toUpperCase().includes(callSignInput.toUpperCase())
-      ).slice(0, 5); // Limit to 5 suggestions
+        op.call_sign.toUpperCase().includes(callSignOnly.toUpperCase())
+      ).slice(0, 10);
       setFilteredOperators(filtered);
       setShowSuggestions(filtered.length > 0);
     } else {
       setFilteredOperators([]);
       setShowSuggestions(false);
     }
-  }, [callSignInput, operators]);
+  }, [callSignOnly, operators]);
 
   // Auto QRZ lookup after user stops typing (debounced)
   useEffect(() => {
-    if (callSignInput.length >= 3 && !selectedOperator && !qrzLookupData) {
-      // Check if this call sign exists in operators database first
+    if (callSignOnly.length >= 3 && !selectedOperator && !qrzLookupData) {
       const existingOperator = operators.find(op => 
-        op.call_sign.toUpperCase() === callSignInput.toUpperCase()
+        op.call_sign.toUpperCase() === callSignOnly.toUpperCase()
       );
       
       if (!existingOperator) {
-        // Set up debounced QRZ lookup
         const timeoutId = setTimeout(() => {
-          console.log('Auto-triggering QRZ lookup for:', callSignInput);
-          qrzLookupMutation.mutate(callSignInput.toUpperCase());
-        }, 2000); // Wait 2 seconds after user stops typing
+          console.log('Auto-triggering QRZ lookup for:', callSignOnly);
+          qrzLookupMutation.mutate(callSignOnly.toUpperCase());
+        }, 2000);
         
         return () => clearTimeout(timeoutId);
       }
@@ -440,11 +356,13 @@ const SessionDetail = () => {
         
         // Reset form but keep it open for next participant
         participantForm.reset();
-        participantForm.setValue('check_in_time', getCurrentTime()); // Set default time for next participant
-        setQrzLookupData(null); // Clear QRZ data
-        setSelectedOperator(null); // Clear selected operator
-        setCallSignInput(''); // Clear input
-        setShowManualEntry(false); // Hide manual entry form
+        participantForm.setValue('check_in_time', getCurrentTime());
+        setQrzLookupData(null);
+        setSelectedOperator(null);
+        setCallSignInput('');
+        setShowManualEntry(false);
+        setShowSuggestions(false);
+        setParticipantFlags({ flag_comment: false, flag_traffic: false, flag_echolink: false, flag_announcement: false });
         
         // Keep the form open - don't set setShowAddParticipant(false)
         // Focus back to the call sign input for quick entry
@@ -457,6 +375,16 @@ const SessionDetail = () => {
       onError: (error) => {
         console.error('Failed to add participant:', error);
         toast.error(error.response?.data?.error || 'Failed to add participant');
+        // Reset form for next entry even on error (e.g., duplicate)
+        participantForm.reset();
+        participantForm.setValue('check_in_time', getCurrentTime());
+        setQrzLookupData(null);
+        setSelectedOperator(null);
+        setCallSignInput('');
+        setShowManualEntry(false);
+        setShowSuggestions(false);
+        setParticipantFlags({ flag_comment: false, flag_traffic: false, flag_echolink: false, flag_announcement: false });
+        setTimeout(() => { if (callSignInputRef.current) callSignInputRef.current.focus(); }, 100);
       }
     }
   );
@@ -484,21 +412,6 @@ const SessionDetail = () => {
     }
   );
 
-  // Patch participant (lightweight: acknowledged, preferred_name)
-  const patchParticipantMutation = useMutation(
-    ({ participantId, data }) =>
-      axios.patch(`/api/sessions/${id}/participants/${participantId}`, data),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['session', id]);
-      },
-      onError: (error) => {
-        toast.error(error.response?.data?.error || 'Failed to update');
-      }
-    }
-  );
-
-
   // Remove participant mutation
   const removeParticipantMutation = useMutation(
     (participantId) => axios.delete(`/api/sessions/${id}/participants/${participantId}`),
@@ -509,6 +422,20 @@ const SessionDetail = () => {
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to remove participant');
+      }
+    }
+  );
+
+  // Patch participant (lightweight: acknowledged, preferred_name)
+  const patchParticipantMutation = useMutation(
+    ({ participantId, data }) =>
+      axios.patch(`/api/sessions/${id}/participants/${participantId}`, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['session', id]);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update');
       }
     }
   );
@@ -532,6 +459,42 @@ const SessionDetail = () => {
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to add traffic');
+      }
+    }
+  );
+
+  // Delete traffic mutation
+  const deleteTrafficMutation = useMutation(
+    (trafficId) => axios.delete(`/api/sessions/${id}/traffic/${trafficId}`),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['session', id]);
+        toast.success('Traffic deleted');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to delete traffic');
+      }
+    }
+  );
+
+  // Update traffic mutation
+  const [editingTraffic, setEditingTraffic] = useState(null);
+  const updateTrafficMutation = useMutation(
+    ({ trafficId, trafficData }) => axios.put(`/api/sessions/${id}/traffic/${trafficId}`, trafficData),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['session', id]);
+        toast.success('Traffic updated');
+        setEditingTraffic(null);
+        setShowAddTraffic(false);
+        trafficForm.reset();
+        setFromCallSignInput('');
+        setToCallSignInput('');
+        setSelectedFromOperator(null);
+        setSelectedToOperator(null);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update traffic');
       }
     }
   );
@@ -678,23 +641,22 @@ const SessionDetail = () => {
         queryClient.invalidateQueries(['session', id]);
         queryClient.invalidateQueries('operators-list');
         
-        const { processed, errors, results, skipped } = response.data;
-        const skippedCount = skipped?.length || 0;
+        const { processed, errors, results } = response.data;
         
         if (processed > 0) {
           const operatorsCreated = results.filter(r => r.operatorCreated).length;
           const qrzLookups = results.filter(r => r.hasQRZData).length;
           
-          let message = `Added ${processed} new participants`;
-          if (skippedCount > 0) message += ` (${skippedCount} already in session)`;
+          let message = `Added ${processed} participants successfully`;
           if (operatorsCreated > 0) {
-            message += ` — ${operatorsCreated} new operators created`;
-            if (qrzLookups > 0) message += ` with QRZ data`;
+            message += ` (${operatorsCreated} new operators created`;
+            if (qrzLookups > 0) {
+              message += ` with QRZ data`;
+            }
+            message += `)`;
           }
           
-          toast.success(message, { duration: 5000 });
-        } else if (skippedCount > 0) {
-          toast.success(`All ${skippedCount} pre-check-ins already in session — no new participants`, { duration: 4000 });
+          toast.success(message);
         }
         
         if (errors.length > 0) {
@@ -726,7 +688,7 @@ const SessionDetail = () => {
         queryClient.invalidateQueries(['session', id]);
         queryClient.invalidateQueries('operators-list');
         
-        const { results, errors, skipped } = response.data;
+        const { results, errors } = response.data;
         
         if (results.length > 0) {
           const result = results[0];
@@ -737,8 +699,6 @@ const SessionDetail = () => {
           }
           
           toast.success(message);
-        } else if (skipped?.length > 0) {
-          toast.success(`${skipped[0].callSign} already in session`);
         }
         
         if (errors.length > 0) {
@@ -752,50 +712,13 @@ const SessionDetail = () => {
     }
   );
 
-  // Fetch echolink logins mutation
-  const fetchEcholinkMutation = useMutation(
-    () => axios.get('/api/echolink'),
-    {
-      onSuccess: async (response) => {
-        const echolinkLogins = response.data.logins;
-
-        // Check which are already in the operators database
-        const enrichedLogins = echolinkLogins.map((login) => {
-          const existingOperator = operators.find(op =>
-            op.call_sign?.toUpperCase() === login.callSign.toUpperCase()
-          );
-          return {
-            ...login,
-            hasOperatorRecord: !!existingOperator,
-            operatorInfo: existingOperator
-          };
-        });
-
-        setEcholinkData({
-          ...response.data,
-          logins: enrichedLogins
-        });
-        setShowEcholink(true);
-
-        toast.success(`Found ${enrichedLogins.length} echolink logins`);
-      },
-      onError: (error) => {
-        console.error('Failed to fetch echolink logins:', error);
-        toast.error(error.response?.data?.error || 'Failed to fetch echolink logins');
-      }
-    }
-  );
-
   // Submit net report mutation
   const submitNetReportMutation = useMutation(
     () => axios.post(`/api/sessions/${id}/submit-net-report`),
     {
       onSuccess: (response) => {
-        const { data: submittedData, response_body, response_status } = response.data;
-        // Show the external service response in a longer-lasting toast
-        const summary = `${submittedData.callSign} — ${submittedData.checkins} check-ins, ${submittedData.traffic} traffic`;
-        const serverResponse = response_body ? `\nServer response (${response_status}): ${response_body.substring(0, 200)}` : '';
-        toast.success(`Net report submitted: ${summary}${serverResponse}`, { duration: 8000 });
+        const data = response.data.data;
+        toast.success(`Net report submitted: ${data.callSign} - ${data.checkins} check-ins, ${data.traffic} traffic`);
       },
       onError: (error) => {
         toast.error(error.response?.data?.error || 'Failed to submit net report');
@@ -858,15 +781,6 @@ const SessionDetail = () => {
     
     console.log('Adding participant directly:', participantData);
     if (editingParticipant) {
-      // If preferred_name changed and participant has an operator, update the operator record
-      const newPreferredName = data.preferred_name;
-      if (editingParticipant.operator_id && newPreferredName !== undefined) {
-        axios.patch(`/api/operators/${editingParticipant.operator_id}/preferred-name`, {
-          preferred_name: newPreferredName || null
-        }).then(() => {
-          queryClient.invalidateQueries('operators-list');
-        }).catch(err => console.error('Failed to update preferred name:', err));
-      }
       updateParticipantMutation.mutate({
         participantId: editingParticipant.id,
         participantData
@@ -877,7 +791,17 @@ const SessionDetail = () => {
   };
 
   const onSubmitTraffic = (data) => {
-    addTrafficMutation.mutate(data);
+    // Include the call signs from the autocomplete inputs
+    const trafficData = {
+      ...data,
+      from_call: selectedFromOperator?.call_sign || fromCallSignInput.trim() || data.from_call,
+      to_call: selectedToOperator?.call_sign || toCallSignInput.trim() || data.to_call
+    };
+    if (editingTraffic) {
+      updateTrafficMutation.mutate({ trafficId: editingTraffic.id, trafficData });
+    } else {
+      addTrafficMutation.mutate(trafficData);
+    }
   };
 
   const handleEditParticipant = (participant) => {
@@ -906,7 +830,6 @@ const SessionDetail = () => {
     // Set form values
     participantForm.setValue('operator_id', participant.operator_id || '');
     participantForm.setValue('call_sign', participant.call_sign || '');
-    participantForm.setValue('preferred_name', participant.operator_preferred_name || '');
     participantForm.setValue('check_in_time', participant.check_in_time || '');
     participantForm.setValue('check_out_time', participant.check_out_time || '');
     participantForm.setValue('notes', participant.notes || '');
@@ -916,35 +839,6 @@ const SessionDetail = () => {
   const handleRemoveParticipant = (participant) => {
     if (window.confirm(`Remove ${participant.call_sign || participant.operator_call} from this session?`)) {
       removeParticipantMutation.mutate(participant.id);
-    }
-  };
-
-  const handleToggleAcknowledged = (participant) => {
-    patchParticipantMutation.mutate({
-      participantId: participant.id,
-      data: { acknowledged: !participant.acknowledged }
-    });
-  };
-
-  const handlePreferredNameEdit = (participant) => {
-    setEditingPreferredName(participant.id);
-    setPreferredNameValue(participant.operator_preferred_name || '');
-  };
-
-  const handlePreferredNameSave = (participant) => {
-    patchParticipantMutation.mutate({
-      participantId: participant.id,
-      data: { preferred_name: preferredNameValue }
-    });
-    setEditingPreferredName(null);
-  };
-
-  const handlePreferredNameKeyDown = (e, participant) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handlePreferredNameSave(participant);
-    } else if (e.key === 'Escape') {
-      setEditingPreferredName(null);
     }
   };
 
@@ -1004,28 +898,14 @@ const SessionDetail = () => {
     participantForm.setValue('operator_id', '');
   };
 
-  // Quick-add helper: select operator and immediately add as participant
-  const quickAddOperator = (operator) => {
-    const { flags } = parseCallSignFlags(callSignInput.trim());
-    const formData = {
-      operator_id: operator.id,
-      call_sign: operator.call_sign,
-      check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
-      check_out_time: participantForm.getValues('check_out_time') || '',
-      notes: participantForm.getValues('notes') || '',
-      ...flags
-    };
-    handleOperatorSelect(operator);
-    onSubmitParticipant(formData);
-  };
-
   const handleCallSignKeyDown = (e) => {
-    // Ctrl+1 through Ctrl+5: select corresponding suggestion
+    // Ctrl+1 through Ctrl+5 to select from suggestions dropdown
     if (e.ctrlKey && e.key >= '1' && e.key <= '5') {
       e.preventDefault();
-      const index = parseInt(e.key) - 1;
-      if (filteredOperators[index]) {
-        quickAddOperator(filteredOperators[index]);
+      const idx = parseInt(e.key) - 1;
+      if (filteredOperators[idx]) {
+        handleOperatorSelect(filteredOperators[idx]);
+        setShowSuggestions(false);
       }
       return;
     }
@@ -1042,14 +922,8 @@ const SessionDetail = () => {
         toast.error('Please enter a call sign');
         return;
       }
-
-      // If exactly one suggestion matches, quick-add it
-      if (filteredOperators.length === 1) {
-        quickAddOperator(filteredOperators[0]);
-        return;
-      }
       
-      // Check if this call sign exists in operators database (exact match)
+      // Check if this call sign exists in operators database
       const existingOperator = operators.find(op => 
         op.call_sign.toUpperCase() === callSign.toUpperCase()
       );
@@ -1262,61 +1136,6 @@ const SessionDetail = () => {
     addSinglePreCheckInMutation.mutate(participant);
   };
 
-  const handleFetchEcholink = () => {
-    fetchEcholinkMutation.mutate();
-  };
-
-  const handleEcholinkSelect = (login, isSelected) => {
-    const newSelected = new Set(selectedEcholinks);
-    if (isSelected) {
-      newSelected.add(login.callSign);
-    } else {
-      newSelected.delete(login.callSign);
-    }
-    setSelectedEcholinks(newSelected);
-  };
-
-  const handleSelectAllEcholink = () => {
-    if (selectedEcholinks.size === echolinkData?.logins.length) {
-      setSelectedEcholinks(new Set());
-    } else {
-      setSelectedEcholinks(new Set(echolinkData?.logins.map(l => l.callSign)));
-    }
-  };
-
-  const handleAddSelectedEcholink = () => {
-    if (selectedEcholinks.size === 0) {
-      toast.error('Please select logins to add');
-      return;
-    }
-
-    // Convert echolink logins to the pre-check-in format so we can reuse the process endpoint
-    // Set flag_echolink since these are echolink connections
-    const selectedLogins = echolinkData.logins
-      .filter(l => selectedEcholinks.has(l.callSign))
-      .map(l => ({
-        callSign: l.callSign,
-        firstName: l.name || '',
-        location: '',
-        announce: '',
-        flag_echolink: true
-      }));
-
-    addMultipleParticipantsMutation.mutate(selectedLogins);
-    setShowEcholink(false);
-    setSelectedEcholinks(new Set());
-  };
-
-  const handleAddSingleEcholink = (login) => {
-    addSinglePreCheckInMutation.mutate({
-      callSign: login.callSign,
-      firstName: login.name || '',
-      location: '',
-      announce: '',
-      flag_echolink: true
-    });
-  };
-
   const handleManualEntryChange = (field, value) => {
     setManualEntryData(prev => ({
       ...prev,
@@ -1435,19 +1254,18 @@ const SessionDetail = () => {
     return new Date().toTimeString().slice(0, 8);
   };
 
-  // Update check-in time in real time when the add participant form is open
+  // Auto-update check-in time every second when participant form is open
   useEffect(() => {
     if (!showAddParticipant || editingParticipant) return;
     const interval = setInterval(() => {
+      const now = new Date();
       const currentVal = participantForm.getValues('check_in_time');
-      // Only auto-update if the user hasn't manually changed it away from a recent time
+      // Only update if within 2 seconds of current time (user hasn't manually edited)
       if (currentVal) {
-        const now = new Date();
-        const parts = currentVal.split(':');
-        const fieldTime = new Date();
-        fieldTime.setHours(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2] || 0));
-        const diff = Math.abs(now - fieldTime);
-        // Only update if within 2 seconds of current time (user hasn't manually edited)
+        const [h, m, s] = currentVal.split(':').map(Number);
+        const formTime = new Date();
+        formTime.setHours(h, m, s || 0, 0);
+        const diff = Math.abs(now - formTime);
         if (diff < 2000) {
           participantForm.setValue('check_in_time', now.toTimeString().slice(0, 8));
         }
@@ -1478,6 +1296,52 @@ const SessionDetail = () => {
     }
     
     return { callSign, flags };
+  };
+
+  // Process net script template with session data
+  const processNetScript = () => {
+    const template = getSetting('net_script_template', '');
+    if (!template || !sessionData) return '';
+    const localDate = parseDateLocal(sessionData.session_date);
+    const ncOperator = operators.find(op => op.call_sign?.toUpperCase() === (sessionData.net_control_call || '').toUpperCase());
+    const tz = getAppTimezone();
+    const dayName = localDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+
+    // Tomorrow's scheduled NC from schedule data
+    const tomorrowNets = upcomingData?.upcoming_nets || [];
+    const tomorrowNet = tomorrowNets[0];
+    const tomorrowFirstName = tomorrowNet?.assigned_operator?.name ? tomorrowNet.assigned_operator.name.split(' ')[0] : '';
+    const tomorrowCallSign = tomorrowNet?.assigned_operator?.call_sign || '';
+
+    const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+    const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+    const startIdx = dayStartIndex[dayName] || 0;
+
+    const vars = {
+      '{FIRSTNAME}': (sessionData.net_control_name || '').split(' ')[0] || '',
+      '{FULLNAME}': sessionData.net_control_name || '',
+      '{CALLSIGN}': sessionData.net_control_call || '',
+      '{CITY}': ncOperator?.city || '',
+      '{DATE}': formatDateLocal(sessionData.session_date),
+      '{DAY_OF_WEEK}': dayName,
+      '{FREQUENCY}': sessionData.frequency || '',
+      '{MODE}': sessionData.mode || 'FM',
+      '{NET_TYPE}': sessionData.net_type || 'Regular',
+      '{CHECKINS}': String(sessionData.participants?.length || 0),
+      '{TRAFFIC}': String(sessionData.traffic?.length || 0),
+      '{START_TIME}': sessionData.start_time || '',
+      '{END_TIME}': sessionData.end_time || '',
+      '{POWER}': sessionData.power || '',
+      '{ANTENNA}': sessionData.antenna || '',
+      '{STARTING_GROUP}': groups[startIdx],
+      '{TOMORROW_FIRSTNAME}': tomorrowFirstName,
+      '{TOMORROW_CALLSIGN}': tomorrowCallSign,
+    };
+    for (let i = 0; i < 6; i++) { vars['{GROUP_' + (i + 1) + '}'] = groups[(startIdx + i) % 6]; }
+
+    let result = template;
+    Object.entries(vars).forEach(([key, value]) => { result = result.replaceAll(key, value); });
+    return result;
   };
 
   const messageTypes = ['Routine', 'Priority', 'Welfare', 'Emergency'];
@@ -1520,23 +1384,24 @@ const SessionDetail = () => {
           <div>
             <h1>
               <Calendar size={24} className="me-2" />
-              Session: {formatDateLocal(sessionData.session_date)}
+              Session: {(() => {
+                const sessionDate = new Date(sessionData.session_date);
+                const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+                return localDate.toLocaleDateString();
+              })()}
             </h1>
             <p className="text-muted mb-0">
-              Net Control: <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/operators?search=${encodeURIComponent(sessionData.net_control_call)}`); }} style={{ textDecoration: 'none' }}>{sessionData.net_control_call}</a>
+              Net Control: {sessionData.net_control_call}
               {sessionData.net_control_name && ` (${sessionData.net_control_name})`}
             </p>
           </div>
         </div>
-        <div className="d-flex gap-2">
+        <div>
           <button
-            className="btn btn-outline-primary"
+            className="btn btn-outline-secondary"
             onClick={() => {
               const template = getSetting('net_script_template', '');
-              if (!template) {
-                toast.error('No net script template configured. Go to Settings → External Services to add one.');
-                return;
-              }
+              if (!template) { toast.error('No net script template configured. Go to Settings → External Services.'); return; }
               setShowNetScript(true);
             }}
           >
@@ -1557,16 +1422,94 @@ const SessionDetail = () => {
               <><Send size={16} className="me-2" />Submit Net Report</>
             )}
           </button>
-          <button
-            className="btn btn-outline-secondary"
-            onClick={() => {
-              window.open('/api/sessions/' + id + '/export-csv', '_blank');
-            }}
-          >
+          <button className="btn btn-outline-secondary" onClick={() => window.open('/api/sessions/' + id + '/export-csv', '_blank')}>
             <Download size={16} className="me-2" />Export CSV
           </button>
         </div>
       </div>
+
+      {/* Net Script Panel */}
+      {showNetScript && (
+        <div className="card mb-4">
+          <div className="card-header d-flex justify-content-between align-items-center">
+            <h2 className="card-title mb-0"><FileText size={20} className="me-2" />Net Script</h2>
+            <div className="d-flex gap-2">
+              <button className="btn btn-outline-primary btn-sm" title="Pop out" onClick={() => {
+                const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+                const tz = getAppTimezone();
+                const scriptDate = parseDateLocal(sessionData?.session_date);
+                const dn = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+                const dsi = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+                const si = dsi[dn] || 0;
+                const checklistHtml = '<div style="padding:8px 0;display:flex;flex-wrap:wrap;gap:12px;align-items:center">' +
+                  [1,2,3,4,5,6].map(i => {
+                    const gn = groups[(si + i - 1) % 6];
+                    return '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.95rem"><input type="checkbox" style="width:16px;height:16px;cursor:pointer" onchange="var s=this.nextElementSibling;if(this.checked){s.style.textDecoration=\'line-through\';s.style.opacity=\'0.5\'}else{s.style.textDecoration=\'none\';s.style.opacity=\'1\'}"><span>' + gn + '</span></label>';
+                  }).join('') + '</div>';
+                let scriptHtml = processNetScript()
+                  .replace(/\{GROUP_CHECKLIST\}/g, checklistHtml)
+                  .replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>')
+                  .replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                const hasInline = processNetScript().includes('{GROUP_CHECKLIST}');
+                const appendChecklist = hasInline ? '' : '<div style="margin-top:16px;padding-top:12px;border-top:1px solid ' + (isDark ? '#30363d' : '#ddd') + '">' + checklistHtml + '</div>';
+                const popout = window.open('', 'NetScript', 'width=700,height=800,scrollbars=yes,resizable=yes');
+                if (popout) {
+                  popout.document.write('<!DOCTYPE html><html><head><title>Net Script - ' + (sessionData?.net_control_call || '') + '</title><style>body{font-family:-apple-system,sans-serif;font-size:1.05rem;line-height:1.8;padding:24px;background:' + (isDark ? '#0d1117' : '#fff') + ';color:' + (isDark ? '#c9d1d9' : '#1a1a1a') + '}pre{white-space:pre-wrap;word-wrap:break-word;font-family:inherit;margin:0}h1{font-size:1.2rem;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid ' + (isDark ? '#30363d' : '#ddd') + '}@media print{body{background:#fff;color:#000}}</style></head><body><h1>Net Script — ' + (sessionData?.net_control_call || '') + ' — ' + formatDateLocal(sessionData?.session_date) + '</h1><pre>' + scriptHtml + '</pre>' + appendChecklist + '</body></html>');
+                  popout.document.close();
+                }
+              }}><ExternalLink size={14} /> Pop Out</button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => {
+                navigator.clipboard.writeText(processNetScript().replace(/\[i\]/g, '').replace(/\[\/i\]/g, '').replace(/\[b\]/g, '').replace(/\[\/b\]/g, '').replace(/\{GROUP_CHECKLIST\}/g, ''));
+                toast.success('Script copied');
+              }}>Copy</button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowNetScript(false)}><X size={14} /></button>
+            </div>
+          </div>
+          <div className="card-body">
+            {(() => {
+              const scriptText = processNetScript();
+              const formatHtml = (text) => text.replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>').replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
+              const preStyle = { whiteSpace: 'pre-wrap', wordWrap: 'break-word', fontFamily: 'inherit', fontSize: '1.05rem', lineHeight: '1.8', margin: 0, color: 'inherit' };
+              const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+              const tz = getAppTimezone();
+              const scriptDate = parseDateLocal(sessionData?.session_date);
+              const dn = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+              const dsi = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+              const si = dsi[dn] || 0;
+              const GroupChecklist = () => (
+                <div style={{ padding: '8px 0', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+                  {[1,2,3,4,5,6].map(i => {
+                    const gn = groups[(si + i - 1) % 6];
+                    return (
+                      <label key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.95rem' }}>
+                        <input type="checkbox" checked={groupAck[i] || false} onChange={() => setGroupAck(prev => ({ ...prev, [i]: !prev[i] }))} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                        <span style={{ textDecoration: groupAck[i] ? 'line-through' : 'none', opacity: groupAck[i] ? 0.5 : 1 }}>{gn}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+              if (scriptText.includes('{GROUP_CHECKLIST}')) {
+                const parts = scriptText.split('{GROUP_CHECKLIST}');
+                return parts.map((part, idx) => (
+                  <React.Fragment key={idx}>
+                    <pre style={preStyle} dangerouslySetInnerHTML={{ __html: formatHtml(part) }} />
+                    {idx < parts.length - 1 && <GroupChecklist />}
+                  </React.Fragment>
+                ));
+              } else {
+                return (
+                  <>
+                    <pre style={preStyle} dangerouslySetInnerHTML={{ __html: formatHtml(scriptText) }} />
+                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-color, #dee2e6)' }}><GroupChecklist /></div>
+                  </>
+                );
+              }
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Session Info Card */}
       <div className="card mb-4">
@@ -1580,14 +1523,18 @@ const SessionDetail = () => {
                 <div className="info-item">
                   <Calendar size={16} className="text-muted me-2" />
                   <strong>Date:</strong>
-                  <span className="ms-2">{formatDateLocal(sessionData.session_date)}</span>
+                  <span className="ms-2">{(() => {
+                    const sessionDate = new Date(sessionData.session_date);
+                    const localDate = new Date(sessionDate.getTime() + sessionDate.getTimezoneOffset() * 60000);
+                    return localDate.toLocaleDateString();
+                  })()}</span>
                 </div>
                 
                 <div className="info-item">
                   <Radio size={16} className="text-muted me-2" />
                   <strong>Net Control:</strong>
                   <span className="ms-2">
-                    <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/operators?search=${encodeURIComponent(sessionData.net_control_call)}`); }} style={{ textDecoration: 'none' }}>{sessionData.net_control_call}</a>
+                    {sessionData.net_control_call}
                     {sessionData.net_control_name && ` (${sessionData.net_control_name})`}
                   </span>
                 </div>
@@ -1638,7 +1585,6 @@ const SessionDetail = () => {
                               });
                               queryClient.invalidateQueries(['session', id]);
                               toast.success('Net ended at ' + endTime);
-                              // Ask to submit net report
                               if (window.confirm('Submit net report now?')) {
                                 try {
                                   await axios.post('/api/sessions/' + id + '/submit-net-report');
@@ -1668,6 +1614,13 @@ const SessionDetail = () => {
                   <strong>Type:</strong>
                   <span className="badge bg-info ms-2">{sessionData.net_type || 'Regular'}</span>
                 </div>
+
+                {sessionData.net_count > 0 && (
+                  <div className="info-item">
+                    <strong>NC Net Count:</strong>
+                    <span className="badge bg-secondary ms-2">{sessionData.net_count}</span>
+                  </div>
+                )}
 
                 {sessionData.power && (
                   <div className="info-item">
@@ -1703,135 +1656,6 @@ const SessionDetail = () => {
           )}
         </div>
       </div>
-
-      {/* Net Script Panel */}
-      {showNetScript && (
-        <div className="card mb-4">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <h2 className="card-title mb-0">
-              <FileText size={20} className="me-2" />
-              Net Script
-            </h2>
-            <div className="d-flex gap-2">
-              <button
-                className="btn btn-outline-primary btn-sm"
-                title="Pop out to separate window"
-                onClick={() => {
-                  // Build group checklist HTML for the pop-out
-                  const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
-                  const tz = getAppTimezone();
-                  const scriptDate = parseDateLocal(sessionData?.session_date);
-                  const dayName = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
-                  const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
-                  const startIdx = dayStartIndex[dayName] || 0;
-                  const checklistHtml = '<div style="padding:8px 0;display:flex;flex-wrap:wrap;gap:12px;align-items:center">' +
-                    [1,2,3,4,5,6].map(i => {
-                      const gName = groups[(startIdx + i - 1) % 6];
-                      return `<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.95rem"><input type="checkbox" style="width:16px;height:16px;cursor:pointer" onchange="var s=this.nextElementSibling;if(this.checked){s.style.textDecoration='line-through';s.style.opacity='0.5'}else{s.style.textDecoration='none';s.style.opacity='1'}"><span>${gName}</span></label>`;
-                    }).join('') + '</div>';
-
-                  let scriptHtml = processNetScript()
-                    .replace(/\{GROUP_CHECKLIST\}/g, checklistHtml)
-                    .replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>')
-                    .replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
-                  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                  const popout = window.open('', 'NetScript', 'width=700,height=800,scrollbars=yes,resizable=yes');
-                  if (popout) {
-                    // If script doesn't contain {GROUP_CHECKLIST}, append checklist at the end
-                    const hasInlineChecklist = processNetScript().includes('{GROUP_CHECKLIST}');
-                    const appendChecklist = hasInlineChecklist ? '' : `<div style="margin-top:16px;padding-top:12px;border-top:1px solid ${isDark ? '#30363d' : '#ddd'}">${checklistHtml}</div>`;
-                    popout.document.write(`<!DOCTYPE html><html><head><title>Net Script - ${sessionData?.net_control_call || ''} ${formatDateLocal(sessionData?.session_date)}</title>
-                      <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 1.05rem; line-height: 1.8; padding: 24px; margin: 0;
-                          background: ${isDark ? '#0d1117' : '#fff'}; color: ${isDark ? '#c9d1d9' : '#1a1a1a'}; }
-                        pre { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; }
-                        h1 { font-size: 1.2rem; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid ${isDark ? '#30363d' : '#ddd'}; }
-                        @media print { body { background: #fff; color: #000; } }
-                      </style></head><body>
-                      <h1>Net Script — ${sessionData?.net_control_call || ''} — ${formatDateLocal(sessionData?.session_date)}</h1>
-                      <pre>${scriptHtml}</pre>${appendChecklist}</body></html>`);
-                    popout.document.close();
-                  }
-                }}
-              >
-                <ExternalLink size={14} />
-                Pop Out
-              </button>
-              <button
-                className="btn btn-outline-secondary btn-sm"
-                onClick={() => {
-                  navigator.clipboard.writeText(processNetScript().replace(/\[i\]/g, '').replace(/\[\/i\]/g, '').replace(/\[b\]/g, '').replace(/\[\/b\]/g, ''));
-                  toast.success('Script copied to clipboard');
-                }}
-              >
-                Copy
-              </button>
-              <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowNetScript(false)}>
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-          <div className="card-body">
-            {(() => {
-              const scriptText = processNetScript();
-              const formatHtml = (text) => text.replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>').replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
-              const preStyle = { whiteSpace: 'pre-wrap', wordWrap: 'break-word', fontFamily: 'inherit', fontSize: '1.05rem', lineHeight: '1.8', margin: 0, color: 'inherit' };
-
-              // Build the group checklist component
-              const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
-              const tz = getAppTimezone();
-              const scriptDate = parseDateLocal(sessionData?.session_date);
-              const dayName = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
-              const dayStartIndex = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
-              const startIdx = dayStartIndex[dayName] || 0;
-
-              const GroupChecklist = () => (
-                <div style={{ padding: '8px 0', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-                  {[1,2,3,4,5,6].map(i => {
-                    const groupName = groups[(startIdx + i - 1) % 6];
-                    return (
-                      <label key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.95rem' }}>
-                        <input
-                          type="checkbox"
-                          checked={groupAck[i] || false}
-                          onChange={() => setGroupAck(prev => ({ ...prev, [i]: !prev[i] }))}
-                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                        />
-                        <span style={{ textDecoration: groupAck[i] ? 'line-through' : 'none', opacity: groupAck[i] ? 0.5 : 1 }}>
-                          {groupName}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              );
-
-              if (scriptText.includes('{GROUP_CHECKLIST}')) {
-                const parts = scriptText.split('{GROUP_CHECKLIST}');
-                return (
-                  <>
-                    {parts.map((part, idx) => (
-                      <React.Fragment key={idx}>
-                        <pre style={preStyle} dangerouslySetInnerHTML={{ __html: formatHtml(part) }} />
-                        {idx < parts.length - 1 && <GroupChecklist />}
-                      </React.Fragment>
-                    ))}
-                  </>
-                );
-              } else {
-                return (
-                  <>
-                    <pre style={preStyle} dangerouslySetInnerHTML={{ __html: formatHtml(scriptText) }} />
-                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-color, #dee2e6)' }}>
-                      <GroupChecklist />
-                    </div>
-                  </>
-                );
-              }
-            })()}
-          </div>
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="card">
@@ -1883,23 +1707,6 @@ const SessionDetail = () => {
                     )}
                   </button>
                   <button 
-                    className="btn btn-outline-success"
-                    onClick={handleFetchEcholink}
-                    disabled={fetchEcholinkMutation.isLoading}
-                  >
-                    {fetchEcholinkMutation.isLoading ? (
-                      <>
-                        <Loader size={16} className="animate-spin me-2" />
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <Radio size={16} className="me-2" />
-                        Echolink Logins
-                      </>
-                    )}
-                  </button>
-                  <button 
                     className="btn btn-primary"
                     onClick={() => {
                       setShowAddParticipant(true);
@@ -1926,9 +1733,9 @@ const SessionDetail = () => {
 
               {/* Add/Edit Participant Form */}
               {showAddParticipant && (
-                <div className="row">
+                <div className="row mb-4">
                 <div className="col-md-8">
-                <div className="card mb-4">
+                <div className="card">
                   <div className="card-header">
                     <h4>{editingParticipant ? 'Edit Participant' : 'Add Participant'}</h4>
                   </div>
@@ -1980,26 +1787,28 @@ const SessionDetail = () => {
                           {/* Autocomplete Suggestions */}
                           {showSuggestions && filteredOperators.length > 0 && (
                             <div className="autocomplete-suggestions">
-                              {filteredOperators.map((operator, index) => (
+                              {filteredOperators.map((operator, idx) => (
                                 <div
                                   key={operator.id}
                                   className="autocomplete-suggestion"
-                                  onClick={() => quickAddOperator(operator)}
+                                  onClick={() => handleOperatorSelect(operator)}
                                 >
-                                  <div className="d-flex align-items-center justify-content-between">
-                                    <div className="d-flex align-items-center">
-                                      <Radio size={14} className="text-primary me-2" />
-                                      <div>
-                                        <strong>{operator.call_sign}</strong>
-                                        {operator.name && (
-                                          <span className="text-muted ms-2">- {operator.name}</span>
-                                        )}
-                                        {operator.location && (
-                                          <div className="small text-muted">{operator.location}</div>
-                                        )}
-                                      </div>
+                                  <div className="d-flex align-items-center">
+                                    {idx < 5 && (
+                                      <span className="badge bg-secondary me-1" style={{ fontSize: '0.65rem', padding: '1px 4px' }}>
+                                        ^{idx + 1}
+                                      </span>
+                                    )}
+                                    <Radio size={14} className="text-primary me-2" />
+                                    <div>
+                                      <strong>{operator.call_sign}</strong>
+                                      {operator.name && (
+                                        <span className="text-muted ms-2">- {operator.name}</span>
+                                      )}
+                                      {operator.location && (
+                                        <div className="small text-muted">{operator.location}</div>
+                                      )}
                                     </div>
-                                    <span className="badge bg-secondary ms-2" style={{ fontSize: '0.65rem', opacity: 0.7 }}>Ctrl+{index + 1}</span>
                                   </div>
                                 </div>
                               ))}
@@ -2054,14 +1863,14 @@ const SessionDetail = () => {
                             {qrzLookupMutation.isLoading ? (
                               <div className="text-info">
                                 <Loader size={12} className="animate-spin me-1" />
-                                Looking up {callSignInput} in QRZ database...
+                                Looking up {callSignOnly} in QRZ database...
                               </div>
-                            ) : callSignInput.length >= 2 && filteredOperators.length === 0 && !selectedOperator && !qrzLookupData ? (
+                            ) : callSignOnly.length >= 2 && filteredOperators.length === 0 && !selectedOperator && !qrzLookupData ? (
                               <div className="text-muted">
-                                No existing operators found. {callSignInput.length >= 3 ? 'Auto-lookup from QRZ in progress...' : 'Type more characters for auto QRZ lookup.'}
+                                No existing operators found. {callSignOnly.length >= 3 ? 'Auto-lookup from QRZ in progress...' : 'Type more characters for auto QRZ lookup.'}
                               </div>
                             ) : (
-                              'Type 2+ characters to search existing operators. QRZ lookup happens automatically after 3+ characters.'
+                              'Type 2+ characters to search. Add /C /T /E /A for flags.'
                             )}
                           </div>
                         </div>
@@ -2134,7 +1943,7 @@ const SessionDetail = () => {
                             <div className="flex-grow-1">
                               <h6 className="mb-2">
                                 <User size={16} className="me-2" />
-                                {'Manual Entry for '}{callSignInput.toUpperCase()}
+                                Manual Entry for {callSignInput}
                               </h6>
                               <div className="small text-muted mb-3">
                                 QRZ lookup failed. You can enter operator information manually or skip to add just the call sign.
@@ -2218,20 +2027,6 @@ const SessionDetail = () => {
                               </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-
-                      {/* Preferred Name - editable, updates operator record */}
-                      {editingParticipant && editingParticipant.operator_id && (
-                        <div className="form-group">
-                          <label className="form-label">Preferred First Name</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="e.g., Bob, Jim, etc."
-                            {...participantForm.register('preferred_name')}
-                          />
-                          <div className="form-text">Updates the operator's preferred name for future sessions</div>
                         </div>
                       )}
 
@@ -2374,54 +2169,60 @@ const SessionDetail = () => {
                   </div>
                 </div>
                 </div>
+                {/* Inline Echolink Card */}
                 <div className="col-md-4">
-                  <div className="card mb-4">
-                    <div className="card-header">
-                      <h4 style={{ fontSize: '1.1rem' }}>
-                        <Headphones size={16} className="me-2" />
-                        Echolink
-                      </h4>
+                  <div className="card" style={{ maxHeight: '500px', overflow: 'auto' }}>
+                    <div className="card-header d-flex justify-content-between align-items-center py-2">
+                      <h5 className="mb-0" style={{ fontSize: '0.9rem' }}>
+                        <Headphones size={14} className="me-1" />
+                        Echolink Stations
+                      </h5>
                       <button
-                        className="btn btn-sm btn-outline-secondary"
+                        className="btn btn-sm btn-outline-secondary py-0"
                         onClick={() => queryClient.invalidateQueries('inline-echolink')}
                         disabled={inlineEcholinkFetching}
-                        title="Refresh"
                       >
-                        <RefreshCw size={14} className={inlineEcholinkFetching ? 'animate-spin' : ''} />
+                        <RefreshCw size={12} className={inlineEcholinkFetching ? 'animate-spin' : ''} />
                       </button>
                     </div>
-                    <div className="card-body" style={{ maxHeight: 400, overflowY: 'auto', padding: '0.75rem' }}>
+                    <div className="card-body p-2">
                       {inlineEcholinkData?.logins?.length > 0 ? (
                         <div className="list-group list-group-flush">
-                          {inlineEcholinkData.logins.map((login) => (
-                            <div key={login.callSign} className="list-group-item d-flex justify-content-between align-items-center" style={{ padding: '0.4rem 0.5rem' }}>
+                          {inlineEcholinkData.logins.map((station, idx) => (
+                            <div key={idx} className="list-group-item px-2 py-1 d-flex justify-content-between align-items-center" style={{ fontSize: '0.85rem' }}>
                               <div>
-                                <strong style={{ fontSize: '0.85rem' }}>{login.callSign}</strong>
-                                {login.name && <div className="small text-muted">{login.name}</div>}
+                                <strong>{station.callSign}</strong>
+                                {station.name && <span className="text-muted ms-1">{station.name}</span>}
                               </div>
                               <button
-                                className="btn btn-sm btn-outline-primary"
-                                onClick={() => handleAddSingleEcholink(login)}
-                                disabled={addSinglePreCheckInMutation.isLoading}
-                                title="Add to session"
+                                className="btn btn-sm btn-outline-primary py-0 px-1"
+                                style={{ fontSize: '0.75rem' }}
+                                onClick={() => {
+                                  // Reset previous state
+                                  setSelectedOperator(null);
+                                  setQrzLookupData(null);
+                                  setShowManualEntry(false);
+                                  setShowSuggestions(false);
+                                  // Set the call sign and echolink flag
+                                  setCallSignInput(station.callSign);
+                                  participantForm.setValue('call_sign', station.callSign);
+                                  setParticipantFlags(prev => ({ ...prev, flag_echolink: true }));
+                                  // Check if operator exists in database
+                                  const existing = operators.find(op => op.call_sign.toUpperCase() === station.callSign.toUpperCase());
+                                  if (existing) {
+                                    setSelectedOperator(existing);
+                                  }
+                                }}
                               >
-                                <UserPlus size={12} />
+                                Add
                               </button>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-3 text-muted">
-                          <Headphones size={24} className="mb-2" />
-                          <div className="small">No stations connected</div>
-                        </div>
+                        <p className="text-muted small mb-0 text-center py-2">No echolink stations</p>
                       )}
                     </div>
-                    {inlineEcholinkData?.logins?.length > 0 && (
-                      <div className="card-footer" style={{ padding: '0.5rem 0.75rem' }}>
-                        <small className="text-muted">{inlineEcholinkData.logins.length} connected &bull; auto-refreshes every 30s</small>
-                      </div>
-                    )}
                   </div>
                 </div>
                 </div>
@@ -2429,24 +2230,6 @@ const SessionDetail = () => {
 
               {/* Participants List */}
               {sessionData.participants && sessionData.participants.length > 0 ? (
-                <div>
-                  <div className="mb-2">
-                    <div className="input-group input-group-sm" style={{ maxWidth: '300px' }}>
-                      <span className="input-group-text"><Search size={14} /></span>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Search participants..."
-                        value={participantSearch}
-                        onChange={(e) => setParticipantSearch(e.target.value)}
-                      />
-                      {participantSearch && (
-                        <button className="btn btn-outline-secondary" onClick={() => setParticipantSearch('')}>
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
                 <div className="table-container">
                   <table className="table">
                     <thead>
@@ -2471,18 +2254,7 @@ const SessionDetail = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedParticipants.filter(p => {
-                        if (!participantSearch) return true;
-                        const term = participantSearch.toLowerCase();
-                        return (
-                          (p.call_sign || '').toLowerCase().includes(term) ||
-                          (p.display_call_sign || '').toLowerCase().includes(term) ||
-                          (p.display_name || p.operator_name || p.name || '').toLowerCase().includes(term) ||
-                          (p.operator_preferred_name || '').toLowerCase().includes(term) ||
-                          (p.display_location || '').toLowerCase().includes(term) ||
-                          (p.notes || '').toLowerCase().includes(term)
-                        );
-                      }).map((participant) => (
+                      {sortedParticipants.map((participant) => (
                         <tr 
                           key={participant.id}
                           style={{ cursor: 'pointer' }}
@@ -2498,9 +2270,11 @@ const SessionDetail = () => {
                             <input
                               type="checkbox"
                               checked={participant.acknowledged || false}
-                              onChange={() => handleToggleAcknowledged(participant)}
-                              title={participant.acknowledged ? 'Acknowledged' : 'Not acknowledged'}
-                              style={{ cursor: 'pointer', width: 18, height: 18 }}
+                              onChange={() => patchParticipantMutation.mutate({
+                                participantId: participant.id,
+                                data: { acknowledged: !participant.acknowledged }
+                              })}
+                              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                             />
                           </td>
                           <td>
@@ -2511,30 +2285,57 @@ const SessionDetail = () => {
                               </strong>
                             </div>
                           </td>
-                          <td onClick={(e) => e.stopPropagation()}>
+                          <td onClick={(e) => {
+                            e.stopPropagation();
+                            if (participant.operator_id) {
+                              setEditingPreferredName(participant.id);
+                              setPreferredNameValue(participant.operator_preferred_name || '');
+                            }
+                          }}>
                             {editingPreferredName === participant.id ? (
-                              <div className="d-flex align-items-center gap-1">
+                              <div className="d-flex align-items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                 <input
                                   type="text"
                                   className="form-control form-control-sm"
                                   value={preferredNameValue}
                                   onChange={(e) => setPreferredNameValue(e.target.value)}
-                                  onKeyDown={(e) => handlePreferredNameKeyDown(e, participant)}
-                                  onBlur={() => handlePreferredNameSave(participant)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      patchParticipantMutation.mutate({ participantId: participant.id, data: { preferred_name: preferredNameValue } });
+                                      setEditingPreferredName(null);
+                                    }
+                                    if (e.key === 'Escape') setEditingPreferredName(null);
+                                  }}
+                                  onBlur={() => {
+                                    patchParticipantMutation.mutate({ participantId: participant.id, data: { preferred_name: preferredNameValue } });
+                                    setEditingPreferredName(null);
+                                  }}
                                   autoFocus
                                   placeholder="Preferred name"
-                                  style={{ width: 120 }}
+                                  style={{ maxWidth: '120px' }}
                                 />
                               </div>
                             ) : (
-                              (participant.display_name || participant.operator_name) ? (
-                                <div className="d-flex align-items-center" style={{ cursor: 'pointer' }} onClick={() => participant.operator_id && handlePreferredNameEdit(participant)} title={participant.operator_id ? 'Click to edit preferred name' : ''}>
-                                  <User size={14} className="text-muted me-1" />
-                                  {participant.operator_preferred_name ? (
-                                    <><span className="text-primary">{participant.operator_preferred_name}</span> <span className="text-muted small">({participant.display_name || participant.operator_name})</span></>
-                                  ) : (participant.display_name || participant.operator_name)}
-                                </div>
-                              ) : null
+                              <div>
+                                {participant.operator_preferred_name && (
+                                  <div className="d-flex align-items-center">
+                                    <User size={14} className="text-primary me-1" />
+                                    <strong>{participant.operator_preferred_name}</strong>
+                                  </div>
+                                )}
+                                {(participant.display_name || participant.operator_name) && (
+                                  <div className="d-flex align-items-center">
+                                    <User size={14} className="text-muted me-1" />
+                                    <span className={participant.operator_preferred_name ? 'small text-muted' : ''}>
+                                      {participant.display_name || participant.operator_name}
+                                    </span>
+                                  </div>
+                                )}
+                                {participant.operator_id && !participant.operator_preferred_name && (
+                                  <div className="small text-muted" style={{ cursor: 'pointer', fontStyle: 'italic' }}>click to set preferred name</div>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td>
@@ -2597,7 +2398,6 @@ const SessionDetail = () => {
                     </tbody>
                   </table>
                 </div>
-                </div>
               ) : (
                 <div className="text-center py-4">
                   <Users size={48} className="text-muted mb-3" />
@@ -2647,7 +2447,7 @@ const SessionDetail = () => {
               {showAddTraffic && (
                 <div className="card mb-4">
                   <div className="card-header">
-                    <h4>Add Traffic Record</h4>
+                    <h4>{editingTraffic ? 'Edit Traffic Record' : 'Add Traffic Record'}</h4>
                   </div>
                   <div className="card-body">
                     <form onSubmit={trafficForm.handleSubmit(onSubmitTraffic)}>
@@ -2662,6 +2462,7 @@ const SessionDetail = () => {
                                 placeholder="Type call sign to search operators or enter new..."
                                 value={fromCallSignInput}
                                 onChange={handleFromCallSignInputChange}
+                                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
                                 onFocus={() => {
                                   if (filteredFromOperators.length > 0) {
                                     setShowFromSuggestions(true);
@@ -2747,6 +2548,7 @@ const SessionDetail = () => {
                                 placeholder="Type call sign to search operators or enter new..."
                                 value={toCallSignInput}
                                 onChange={handleToCallSignInputChange}
+                                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
                                 onFocus={() => {
                                   if (filteredToOperators.length > 0) {
                                     setShowToSuggestions(true);
@@ -2867,17 +2669,17 @@ const SessionDetail = () => {
                         <button 
                           type="submit" 
                           className="btn btn-primary"
-                          disabled={addTrafficMutation.isLoading}
+                          disabled={addTrafficMutation.isLoading || updateTrafficMutation.isLoading}
                         >
-                          {addTrafficMutation.isLoading ? (
+                          {(addTrafficMutation.isLoading || updateTrafficMutation.isLoading) ? (
                             <>
                               <Loader size={16} className="animate-spin" />
-                              Adding...
+                              {editingTraffic ? 'Updating...' : 'Adding...'}
                             </>
                           ) : (
                             <>
                               <Send size={16} className="me-2" />
-                              Add Traffic
+                              {editingTraffic ? 'Update Traffic' : 'Add Traffic'}
                             </>
                           )}
                         </button>
@@ -2886,6 +2688,7 @@ const SessionDetail = () => {
                           className="btn btn-secondary"
                           onClick={() => {
                             setShowAddTraffic(false);
+                            setEditingTraffic(null);
                             trafficForm.reset();
                             // Clear traffic form state
                             setFromCallSignInput('');
@@ -2916,6 +2719,7 @@ const SessionDetail = () => {
                         <th>Type</th>
                         <th>Precedence</th>
                         <th>Message</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2946,7 +2750,7 @@ const SessionDetail = () => {
                         >
                           <td>
                             <div className="small text-muted">
-                              {new Date(traffic.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                              {new Date(traffic.created_at).toLocaleTimeString()}
                             </div>
                           </td>
                           <td>
@@ -2985,6 +2789,38 @@ const SessionDetail = () => {
                               <div className="small text-muted mt-1">{traffic.notes}</div>
                             )}
                           </td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <div className="d-flex gap-1">
+                            <button
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => {
+                                setEditingTraffic(traffic);
+                                setFromCallSignInput(traffic.from_call || '');
+                                setToCallSignInput(traffic.to_call || '');
+                                trafficForm.setValue('message_number', traffic.message_number || '');
+                                trafficForm.setValue('precedence', traffic.precedence || 'Routine');
+                                trafficForm.setValue('message_text', traffic.message_text || '');
+                                trafficForm.setValue('time_received', traffic.time_received || '');
+                                trafficForm.setValue('handled_by', traffic.handled_by || '');
+                                trafficForm.setValue('notes', traffic.notes || '');
+                                setShowAddTraffic(true);
+                              }}
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => {
+                                if (window.confirm('Delete this traffic entry?')) {
+                                  deleteTrafficMutation.mutate(traffic.id);
+                                }
+                              }}
+                              disabled={deleteTrafficMutation.isLoading}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -3007,167 +2843,6 @@ const SessionDetail = () => {
           )}
         </div>
       </div>
-
-      {/* Echolink Logins Modal */}
-      {showEcholink && (
-        <div className="modal-overlay" onClick={() => setShowEcholink(false)}>
-          <div className="modal-dialog modal-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">
-                  <Radio size={20} className="me-2" />
-                  Echolink Logins
-                </h4>
-                <button 
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => setShowEcholink(false)}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              
-              <div className="modal-body">
-                {echolinkData && (
-                  <>
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <div>
-                        <p className="mb-1">
-                          <strong>{echolinkData.logins.length}</strong> stations connected via Echolink
-                        </p>
-                        <p className="small text-muted mb-0">
-                          Fetched: {new Date(echolinkData.fetchedAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="d-flex gap-2">
-                        <button 
-                          className="btn btn-sm btn-outline-primary"
-                          onClick={handleSelectAllEcholink}
-                        >
-                          <Square size={14} className="me-1" />
-                          {selectedEcholinks.size === echolinkData.logins.length ? 'Deselect All' : 'Select All'}
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-success"
-                          onClick={handleAddSelectedEcholink}
-                          disabled={selectedEcholinks.size === 0 || addMultipleParticipantsMutation.isLoading}
-                        >
-                          {addMultipleParticipantsMutation.isLoading ? (
-                            <>
-                              <Loader size={14} className="animate-spin me-1" />
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus size={14} className="me-1" />
-                              Add Selected ({selectedEcholinks.size})
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="table-container">
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th width="50">
-                              <input
-                                type="checkbox"
-                                checked={selectedEcholinks.size === echolinkData.logins.length && echolinkData.logins.length > 0}
-                                onChange={handleSelectAllEcholink}
-                              />
-                            </th>
-                            <th>Call Sign</th>
-                            <th>Name</th>
-                            <th>Connected Since</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {echolinkData.logins.map((login) => (
-                            <tr key={login.callSign}>
-                              <td>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedEcholinks.has(login.callSign)}
-                                  onChange={(e) => handleEcholinkSelect(login, e.target.checked)}
-                                />
-                              </td>
-                              <td>
-                                <div className="d-flex align-items-center">
-                                  <Radio size={14} className="text-success me-2" />
-                                  <div>
-                                    <strong>{login.callSign}</strong>
-                                    {!login.hasOperatorRecord && (
-                                      <div className="small text-info">
-                                        <Search size={10} className="me-1" />
-                                        Will lookup QRZ
-                                      </div>
-                                    )}
-                                    {login.hasOperatorRecord && (
-                                      <div className="small text-success">
-                                        <User size={10} className="me-1" />
-                                        In database
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td>{login.name}</td>
-                              <td>
-                                <div className="small text-muted">
-                                  <Clock size={12} className="me-1" />
-                                  {login.connectedSince}
-                                </div>
-                              </td>
-                              <td>
-                                <span className="badge bg-success">Connected</span>
-                              </td>
-                              <td>
-                                <button 
-                                  className="btn btn-sm btn-outline-primary"
-                                  onClick={() => handleAddSingleEcholink(login)}
-                                  disabled={addSinglePreCheckInMutation.isLoading}
-                                >
-                                  {addSinglePreCheckInMutation.isLoading ? (
-                                    <Loader size={12} className="animate-spin" />
-                                  ) : (
-                                    <>
-                                      <UserPlus size={12} className="me-1" />
-                                      Add
-                                    </>
-                                  )}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {echolinkData.logins.length === 0 && (
-                      <div className="text-center py-4">
-                        <Radio size={48} className="text-muted mb-3" />
-                        <p className="text-muted">No stations currently connected via Echolink</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-              
-              <div className="modal-footer">
-                <button 
-                  className="btn btn-secondary"
-                  onClick={() => setShowEcholink(false)}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Pre-Check-In Modal */}
       {showPreCheckIn && (
@@ -3246,7 +2921,15 @@ const SessionDetail = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {preCheckInData.participants.map((participant) => {
+                          {[...preCheckInData.participants]
+                            .sort((a, b) => {
+                              const aIn = sessionData?.participants?.some(p => p.call_sign?.toUpperCase() === a.callSign?.toUpperCase());
+                              const bIn = sessionData?.participants?.some(p => p.call_sign?.toUpperCase() === b.callSign?.toUpperCase());
+                              if (aIn && !bIn) return 1;
+                              if (!aIn && bIn) return -1;
+                              return 0;
+                            })
+                            .map((participant) => {
                             const alreadyInSession = sessionData?.participants?.some(p => 
                               p.call_sign?.toUpperCase() === participant.callSign?.toUpperCase()
                             );
@@ -3345,7 +3028,6 @@ const SessionDetail = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

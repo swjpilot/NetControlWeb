@@ -205,6 +205,7 @@ const Sessions = () => {
     setValue('net_type', session.net_type || 'Regular');
     setValue('total_checkins', session.participant_count || session.total_checkins || '');
     setValue('total_traffic', session.traffic_count || session.total_traffic || '');
+    setValue('net_count', session.net_count || '');
     
     // Reset the net control user dropdown when editing
     setSelectedNetControlUser('');
@@ -606,6 +607,17 @@ const Sessions = () => {
                       {...register('total_traffic')}
                     />
                     <div className="form-text">Override count (for summary-only sessions)</div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">NC Net Count</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min="1"
+                      placeholder="Auto"
+                      {...register('net_count')}
+                    />
+                    <div className="form-text">Times this NC has called the net</div>
                   </div>
                 </div>
               )}

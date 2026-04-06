@@ -17,6 +17,8 @@ const QuickSession = () => {
   const [selectedNetControlUser, setSelectedNetControlUser] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const [announcements, setAnnouncements] = useState(true);
+
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
       session_date: getTodayDate(),
@@ -78,7 +80,7 @@ const QuickSession = () => {
 
       // 2. Submit net report for the new session
       try {
-        const reportResponse = await axios.post(`/api/sessions/${sessionId}/submit-net-report`);
+        const reportResponse = await axios.post(`/api/sessions/${sessionId}/submit-net-report`, { announcements: announcements ? 'Yes' : 'No' });
         if (reportResponse.data.success) {
           toast.success('Net report submitted successfully');
         }
@@ -220,9 +222,35 @@ const QuickSession = () => {
                   {...register('total_traffic')}
                 />
               </div>
+              <div className="form-group">
+                <label className="form-label">NC Net Count</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  min="1"
+                  placeholder="Auto"
+                  {...register('net_count')}
+                />
+                <div className="form-text">Times this NC has called the net. Auto-calculated if blank.</div>
+              </div>
             </div>
 
             {/* Notes */}
+            <div className="form-group">
+              <div className="form-check mt-2">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  id="announcements"
+                  checked={announcements}
+                  onChange={(e) => setAnnouncements(e.target.checked)}
+                />
+                <label className="form-check-label" htmlFor="announcements">
+                  Announce On Air
+                </label>
+              </div>
+            </div>
+
             <div className="form-group">
               <label className="form-label">Session Notes</label>
               <textarea

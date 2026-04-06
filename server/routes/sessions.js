@@ -96,7 +96,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const sessions = await db.sql.unsafe(
       `SELECT s.id, s.session_date, s.net_control_call, s.net_control_name, 
              s.start_time, s.end_time, s.frequency, s.mode, s.notes,
-             s.total_checkins, s.total_traffic,
+             s.total_checkins, s.total_traffic, s.net_count,
              s.created_at, s.updated_at
       FROM sessions s
       ${filterSQL}
@@ -114,15 +114,24 @@ router.get('/', authenticateToken, async (req, res) => {
       `;
       const actual_participants = parseInt(participantResult[0].count) || 0;
       
-      // Get traffic count
+      // Get traffic count (session_traffic records + participants flagged as traffic/announcement/comment)
       const trafficResult = await db.sql`
         SELECT COUNT(*) as count FROM session_traffic WHERE session_id = ${session.id}
       `;
+      const flagResult = await db.sql`
+        SELECT 
+          COUNT(*) FILTER (WHERE flag_traffic = true) as traffic_flags,
+          COUNT(*) FILTER (WHERE flag_announcement = true) as announcement_flags,
+          COUNT(*) FILTER (WHERE flag_comment = true) as comment_flags
+        FROM session_participants WHERE session_id = ${session.id}
+      `;
       const actual_traffic = parseInt(trafficResult[0].count) || 0;
+      const flagCounts = flagResult[0] || {};
+      const total_flags = (parseInt(flagCounts.traffic_flags) || 0) + (parseInt(flagCounts.announcement_flags) || 0) + (parseInt(flagCounts.comment_flags) || 0);
       
       // Use actual count if there are real records, otherwise fall back to stored summary totals
       const participant_count = actual_participants > 0 ? actual_participants : (parseInt(session.total_checkins) || 0);
-      const traffic_count = actual_traffic > 0 ? actual_traffic : (parseInt(session.total_traffic) || 0);
+      const traffic_count = (actual_traffic + total_flags) > 0 ? (actual_traffic + total_flags) : (parseInt(session.total_traffic) || 0);
       
       sessionsWithCounts.push({
         ...session,
@@ -160,7 +169,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
         COUNT(DISTINCT s.id) as total_sessions,
         COUNT(DISTINCT CASE WHEN s.session_date >= CURRENT_DATE - INTERVAL '7 days' THEN s.id END) as sessions_last_7_days,
         SUM(GREATEST(COALESCE(pc.count, 0), COALESCE(s.total_checkins, 0))) as total_participants,
-        SUM(GREATEST(COALESCE(tc.count, 0), COALESCE(s.total_traffic, 0))) as total_traffic_handled
+        SUM(GREATEST(COALESCE(tc.count, 0), COALESCE(s.total_traffic, 0)) + COALESCE(fc.count, 0)) as total_traffic_handled
       FROM sessions s
       LEFT JOIN (
         SELECT session_id, COUNT(*) as count
@@ -172,6 +181,12 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
         FROM session_traffic
         GROUP BY session_id
       ) tc ON s.id = tc.session_id
+      LEFT JOIN (
+        SELECT session_id, COUNT(*) as count
+        FROM session_participants
+        WHERE flag_traffic = true OR flag_announcement = true OR flag_comment = true
+        GROUP BY session_id
+      ) fc ON s.id = fc.session_id
     `;
     
     const stats = result[0];
@@ -215,7 +230,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const sessionResult = await db.sql`
       SELECT id, session_date, net_control_call, net_control_name, start_time, end_time,
              frequency, mode, notes, weather, net_type, power, antenna,
-             total_checkins, total_traffic,
+             total_checkins, total_traffic, net_count,
              created_at, updated_at
       FROM sessions 
       WHERE id = ${sessionId}
@@ -279,7 +294,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     
     // Add counts - use actual records if present, otherwise fall back to stored summary totals
     const participant_count = participants.length > 0 ? participants.length : (parseInt(session.total_checkins) || 0);
-    const traffic_count = traffic.length > 0 ? traffic.length : (parseInt(session.total_traffic) || 0);
+    const flag_traffic_count = participants.filter(p => p.flag_traffic || p.flag_announcement || p.flag_comment).length;
+    const traffic_count = (traffic.length + flag_traffic_count) > 0 ? (traffic.length + flag_traffic_count) : (parseInt(session.total_traffic) || 0);
     
     console.log('✅ Session details prepared:', {
       sessionId: session.id,
@@ -318,22 +334,29 @@ router.post('/', authenticateToken, requireWrite, async (req, res) => {
       notes,
       weather_report,
       total_checkins = 0,
-      total_traffic = 0
+      total_traffic = 0,
+      net_count: providedNetCount
     } = req.body;
     
     if (!session_date || !net_control_call) {
       return res.status(400).json({ error: 'Session date and net control call sign are required' });
     }
     
+    // Calculate net count for this controller
+    const countResult = await db.sql`
+      SELECT COUNT(*) as count FROM sessions WHERE UPPER(net_control_call) = ${net_control_call.toUpperCase()}
+    `;
+    const netCount = providedNetCount ? parseInt(providedNetCount) : (parseInt(countResult[0].count) || 0) + 1;
+    
     const result = await db.sql`
       INSERT INTO sessions (
         session_date, net_control_call, net_control_name, start_time, end_time,
-        frequency, mode, notes, weather_report, total_checkins, total_traffic
+        frequency, mode, notes, weather_report, total_checkins, total_traffic, net_count
       ) VALUES (
         ${session_date}, ${net_control_call.toUpperCase()}, ${net_control_name || null}, 
         ${start_time || null}, ${end_time || null}, ${frequency || null}, 
         ${mode || 'FM'}, ${notes || null}, ${weather_report || null},
-        ${total_checkins}, ${total_traffic}
+        ${total_checkins}, ${total_traffic}, ${netCount}
       ) RETURNING *
     `;
     
@@ -360,7 +383,8 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
       notes,
       weather_report,
       total_checkins,
-      total_traffic
+      total_traffic,
+      net_count
     } = req.body;
     
     if (!session_date || !net_control_call) {
@@ -370,6 +394,7 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
     // Only update counts if explicitly provided (don't reset to 0)
     const checkins = total_checkins !== undefined && total_checkins !== null ? parseInt(total_checkins) : null;
     const traffic = total_traffic !== undefined && total_traffic !== null ? parseInt(total_traffic) : null;
+    const netCountVal = net_count !== undefined && net_count !== null && net_count !== '' ? parseInt(net_count) : null;
 
     let result;
     if (checkins !== null && traffic !== null) {
@@ -386,6 +411,7 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
           weather_report = ${weather_report || null},
           total_checkins = ${checkins},
           total_traffic = ${traffic},
+          net_count = COALESCE(${netCountVal}, net_count),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ${id}
         RETURNING *
@@ -402,6 +428,7 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
           mode = ${mode || 'FM'},
           notes = ${notes || null},
           weather_report = ${weather_report || null},
+          net_count = COALESCE(${netCountVal}, net_count),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ${id}
         RETURNING *
@@ -725,6 +752,42 @@ router.post('/:id/traffic', authenticateToken, async (req, res) => {
   }
 });
 
+// Update traffic entry
+router.put('/:sessionId/traffic/:trafficId', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId, trafficId } = req.params;
+    const { from_call, to_call, message_number, precedence, message_text, time_received, handled_by, notes } = req.body;
+    if (!from_call || !to_call) return res.status(400).json({ error: 'From and To call signs are required' });
+    const result = await db.sql`
+      UPDATE session_traffic SET
+        from_call = ${from_call.toUpperCase()}, to_call = ${to_call.toUpperCase()},
+        message_number = ${message_number || null}, precedence = ${precedence || 'Routine'},
+        message_text = ${message_text || null}, time_received = ${time_received || null},
+        handled_by = ${handled_by || null}, notes = ${notes || null}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${trafficId} AND session_id = ${sessionId} RETURNING *
+    `;
+    if (result.length === 0) return res.status(404).json({ error: 'Traffic not found' });
+    res.json(result[0]);
+  } catch (error) {
+    console.error('Update traffic error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete traffic from session
+router.delete('/:sessionId/traffic/:trafficId', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId, trafficId } = req.params;
+    const result = await db.sql`DELETE FROM session_traffic WHERE id = ${trafficId} AND session_id = ${sessionId} RETURNING *`;
+    if (result.length === 0) return res.status(404).json({ error: 'Traffic not found' });
+    await db.sql`UPDATE sessions SET total_traffic = (SELECT COUNT(*) FROM session_traffic WHERE session_id = ${sessionId}), updated_at = CURRENT_TIMESTAMP WHERE id = ${sessionId}`;
+    res.json({ message: 'Traffic deleted' });
+  } catch (error) {
+    console.error('Delete traffic error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Fix participant-operator links for existing participants
 router.post('/:id/fix-participant-links', authenticateToken, async (req, res) => {
   try {
@@ -968,17 +1031,30 @@ router.post('/:id/submit-net-report', authenticateToken, async (req, res) => {
 
     // Build query params
     // Use actual participant/traffic records if they exist, otherwise fall back to stored summary totals
+    // Include participants flagged as traffic/announcement/comment in the traffic count
+    const flagCountResult = await db.sql`
+      SELECT COUNT(*) as count FROM session_participants 
+      WHERE session_id = ${id} AND (flag_traffic = true OR flag_announcement = true OR flag_comment = true)
+    `;
+    const flagTraffic = parseInt(flagCountResult[0].count) || 0;
     const checkins = parseInt(session.checkin_count) > 0 ? parseInt(session.checkin_count) : (parseInt(session.total_checkins) || 0);
-    const traffic = parseInt(session.traffic_count) > 0 ? parseInt(session.traffic_count) : (parseInt(session.total_traffic) || 0);
+    const rawTraffic = parseInt(session.traffic_count) > 0 ? parseInt(session.traffic_count) : (parseInt(session.total_traffic) || 0);
+    const traffic = rawTraffic + flagTraffic;
+
+    // Get net count for this controller (number of reports/sessions they've submitted)
+    const netCountResult = await db.sql`
+      SELECT COUNT(*) as count FROM sessions WHERE UPPER(net_control_call) = UPPER(${session.net_control_call})
+    `;
+    const netCount = parseInt(session.net_count) || parseInt(netCountResult[0].count) || 1;
 
     const params = new URLSearchParams({
       f: firstName,
       s: (session.net_control_call || '').toLowerCase(),
       d: formattedDate,
-      m: modeValue,
+      m: netCount,
       c: checkins,
       t: traffic,
-      a: 'Yes'
+      a: req.body?.announcements || 'Yes'
     });
 
     const submitUrl = `${baseUrl}?${params.toString()}`;
