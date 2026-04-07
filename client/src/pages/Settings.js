@@ -61,10 +61,21 @@ const Settings = () => {
     () => axios.get('/api/settings').then(res => res.data.settings),
     {
       onSuccess: (data) => {
+        // Boolean setting keys stored as "true"/"false" strings in DB
+        const boolKeys = new Set([
+          'smtp_secure', 'smtp_starttls', 'smtp_no_auth',
+          'auto_backup_enabled', 'auto_backup_s3_enabled',
+          'require_password_change', 'monthly_report_enabled'
+        ]);
+
         // Populate all forms with current settings
         Object.entries(tabForms).forEach(([tabName, form]) => {
           Object.entries(data).forEach(([key, value]) => {
-            form.setValue(key, value);
+            if (boolKeys.has(key)) {
+              form.setValue(key, value === true || value === 'true');
+            } else {
+              form.setValue(key, value);
+            }
           });
           // Set current theme if not in settings
           if (!data.theme) {

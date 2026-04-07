@@ -181,7 +181,8 @@ async function runScheduledS3Backup() {
     settings.forEach(s => { map[s.key] = s.value; });
 
     if (map.auto_backup_s3_enabled !== 'true' || !map.backup_s3_bucket) {
-      return;
+      console.log('Scheduled S3 backup: skipped (enabled=' + map.auto_backup_s3_enabled + ', bucket=' + (map.backup_s3_bucket || 'none') + ')');
+      return false;
     }
 
     const s3 = new AWS.S3({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -215,8 +216,10 @@ async function runScheduledS3Backup() {
         console.log('Pruned old backup:', obj.Key);
       }
     }
+    return true;
   } catch (error) {
     console.error('Scheduled S3 backup error:', error.message);
+    return false;
   }
 }
 

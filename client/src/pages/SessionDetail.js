@@ -149,7 +149,10 @@ const SessionDetail = () => {
     {
       enabled: showAddParticipant,
       refetchInterval: 30000,
-      refetchIntervalInBackground: false
+      refetchIntervalInBackground: false,
+      retry: 3,
+      retryDelay: 5000,
+      onError: () => {} // Silently handle errors, keep refetching
     }
   );
 

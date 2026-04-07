@@ -39,14 +39,14 @@ const Dashboard = () => {
   const { data: echolinkData, isLoading: echolinkLoading, isFetching: echolinkFetching } = useQuery(
     'dashboard-echolink',
     () => axios.get('/api/echolink').then(res => res.data),
-    { refetchInterval: 60000, retry: false }
+    { refetchInterval: 60000, retry: 3, retryDelay: 5000 }
   );
 
   // Fetch pre-check-in list
   const { data: preCheckinData, isLoading: preCheckinLoading, isFetching: preCheckinFetching } = useQuery(
     'dashboard-precheckin',
     () => axios.get('/api/pre-checkin').then(res => res.data),
-    { refetchInterval: 60000, retry: false }
+    { refetchInterval: 60000, retry: 3, retryDelay: 5000 }
   );
 
   // Get today's date for quick session access
