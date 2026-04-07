@@ -191,11 +191,15 @@ const Reports = () => {
 
   const handleSendMonthlyEmail = () => {
     const defaultEmail = arrlEmail || '';
-    const email = prompt('Send monthly net report to:', defaultEmail);
-    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      sendMonthlyEmailMutation.mutate(email);
-    } else if (email) {
-      toast.error('Please enter a valid email address');
+    const email = prompt('Send monthly net report to (comma-separated for multiple):', defaultEmail);
+    if (email) {
+      const emails = email.split(',').map(e => e.trim()).filter(Boolean);
+      const allValid = emails.every(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+      if (allValid && emails.length > 0) {
+        sendMonthlyEmailMutation.mutate(email);
+      } else {
+        toast.error('Please enter valid email address(es)');
+      }
     }
   };
 

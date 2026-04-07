@@ -212,6 +212,7 @@ const Operators = () => {
     setValue('grid', operator.grid || '');
     setValue('email', operator.email || '');
     setShowAddForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = (operator) => {

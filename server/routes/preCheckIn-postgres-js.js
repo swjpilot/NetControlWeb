@@ -367,7 +367,7 @@ router.post('/process', authenticateToken, async (req, res) => {
           ) VALUES (
             ${sessionId}, ${callSign.toUpperCase()}, ${resolvedName},
             ${checkInTime},
-            ${`Pre-check-in: ${announce || 'No announcement'}`}, ${operatorId}, ${flagEcholink}
+            ${flagEcholink ? 'Echolink check-in' : `Pre-check-in: ${announce || 'No announcement'}`}, ${operatorId}, ${flagEcholink}
           ) RETURNING *
         `;
         

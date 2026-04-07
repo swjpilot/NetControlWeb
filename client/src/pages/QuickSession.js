@@ -57,6 +57,7 @@ const QuickSession = () => {
       const match = netControlUsers.find(u =>
         u.callSign?.toUpperCase() === user.callSign.toUpperCase()
       );
+      const callSign = match ? match.callSign : user.callSign;
       if (match) {
         setSelectedNetControlUser(String(match.id));
         setValue('net_control_call', match.callSign);
@@ -65,6 +66,10 @@ const QuickSession = () => {
         setValue('net_control_call', user.callSign);
         setValue('net_control_name', user.name || user.username || '');
       }
+      // Fetch net count for this controller
+      axios.get('/api/sessions', { params: { search: callSign, limit: 1 } })
+        .then(res => setValue('net_count', (res.data.total || 0) + 1))
+        .catch(() => {});
     }
   }, [netControlUsers, user, setValue]);
 
@@ -97,17 +102,26 @@ const QuickSession = () => {
     }
   };
 
-  const handleNetControlUserChange = (userId) => {
+  const handleNetControlUserChange = async (userId) => {
     setSelectedNetControlUser(userId);
     if (userId) {
       const selected = netControlUsers?.find(u => u.id === parseInt(userId));
       if (selected) {
         setValue('net_control_call', selected.callSign);
         setValue('net_control_name', selected.name || selected.username);
+        // Fetch net count for this controller
+        try {
+          const res = await axios.get('/api/sessions', { params: { search: selected.callSign, limit: 1 } });
+          const count = (res.data.total || 0) + 1;
+          setValue('net_count', count);
+        } catch (e) {
+          // Leave blank on error
+        }
       }
     } else {
       setValue('net_control_call', '');
       setValue('net_control_name', '');
+      setValue('net_count', '');
     }
   };
 
@@ -228,10 +242,10 @@ const QuickSession = () => {
                   type="number"
                   className="form-control"
                   min="1"
-                  placeholder="Auto"
+                  placeholder=""
                   {...register('net_count')}
                 />
-                <div className="form-text">Times this NC has called the net. Auto-calculated if blank.</div>
+                <div className="form-text">Auto-calculated. Override if needed.</div>
               </div>
             </div>
 

@@ -211,6 +211,7 @@ const Sessions = () => {
     setSelectedNetControlUser('');
     
     setShowAddForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = (session) => {

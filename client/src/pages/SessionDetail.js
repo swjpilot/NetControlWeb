@@ -291,7 +291,7 @@ const SessionDetail = () => {
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [callSignInput, operators, selectedOperator, qrzLookupData, qrzLookupMutation]);
+  }, [callSignOnly, operators, selectedOperator, qrzLookupData, qrzLookupMutation]);
 
   // Filter FROM operators for traffic form
   useEffect(() => {
@@ -1037,6 +1037,20 @@ const SessionDetail = () => {
     // Update form values
     participantForm.setValue('operator_id', operator.id);
     participantForm.setValue('call_sign', operator.call_sign);
+    
+    // Auto-submit the participant
+    const checkInTime = participantForm.getValues('check_in_time') || getCurrentTime();
+    addParticipantMutation.mutate({
+      operator_id: operator.id,
+      call_sign: operator.call_sign,
+      check_in_time: checkInTime,
+      check_out_time: participantForm.getValues('check_out_time') || '',
+      notes: participantForm.getValues('notes') || '',
+      flag_comment: participantFlags.flag_comment,
+      flag_traffic: participantFlags.flag_traffic,
+      flag_echolink: participantFlags.flag_echolink,
+      flag_announcement: participantFlags.flag_announcement
+    });
   };
 
   const clearSelection = () => {
@@ -2198,20 +2212,14 @@ const SessionDetail = () => {
                                 className="btn btn-sm btn-outline-primary py-0 px-1"
                                 style={{ fontSize: '0.75rem' }}
                                 onClick={() => {
-                                  // Reset previous state
-                                  setSelectedOperator(null);
-                                  setQrzLookupData(null);
-                                  setShowManualEntry(false);
-                                  setShowSuggestions(false);
-                                  // Set the call sign and echolink flag
-                                  setCallSignInput(station.callSign);
-                                  participantForm.setValue('call_sign', station.callSign);
-                                  setParticipantFlags(prev => ({ ...prev, flag_echolink: true }));
-                                  // Check if operator exists in database
-                                  const existing = operators.find(op => op.call_sign.toUpperCase() === station.callSign.toUpperCase());
-                                  if (existing) {
-                                    setSelectedOperator(existing);
-                                  }
+                                  // Submit directly using pre-checkin process logic
+                                  addSinglePreCheckInMutation.mutate({
+                                    callSign: station.callSign,
+                                    firstName: station.name || '',
+                                    location: '',
+                                    announce: '',
+                                    flag_echolink: true
+                                  });
                                 }}
                               >
                                 Add
@@ -2230,6 +2238,24 @@ const SessionDetail = () => {
 
               {/* Participants List */}
               {sessionData.participants && sessionData.participants.length > 0 ? (
+                <div>
+                  <div className="mb-2">
+                    <div className="input-group input-group-sm" style={{ maxWidth: '300px' }}>
+                      <span className="input-group-text"><Search size={14} /></span>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search participants..."
+                        value={participantSearch}
+                        onChange={(e) => setParticipantSearch(e.target.value)}
+                      />
+                      {participantSearch && (
+                        <button className="btn btn-outline-secondary" onClick={() => setParticipantSearch('')}>
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 <div className="table-container">
                   <table className="table">
                     <thead>
@@ -2254,7 +2280,17 @@ const SessionDetail = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedParticipants.map((participant) => (
+                      {sortedParticipants.filter(p => {
+                        if (!participantSearch) return true;
+                        const term = participantSearch.toLowerCase();
+                        return (
+                          (p.call_sign || '').toLowerCase().includes(term) ||
+                          (p.display_name || p.operator_name || p.name || '').toLowerCase().includes(term) ||
+                          (p.operator_preferred_name || '').toLowerCase().includes(term) ||
+                          (p.display_location || '').toLowerCase().includes(term) ||
+                          (p.notes || '').toLowerCase().includes(term)
+                        );
+                      }).map((participant) => (
                         <tr 
                           key={participant.id}
                           style={{ cursor: 'pointer' }}
@@ -2263,7 +2299,7 @@ const SessionDetail = () => {
                             if (e.target.closest('.btn')) return;
                             handleEditParticipant(participant);
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                          onMouseEnter={(e) => { const dk = document.documentElement.getAttribute('data-theme') === 'dark'; e.currentTarget.style.backgroundColor = dk ? '#161b22' : '#f8f9fa'; }}
                           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
                         >
                           <td onClick={(e) => e.stopPropagation()}>
@@ -2311,9 +2347,9 @@ const SessionDetail = () => {
                                     patchParticipantMutation.mutate({ participantId: participant.id, data: { preferred_name: preferredNameValue } });
                                     setEditingPreferredName(null);
                                   }}
-                                  autoFocus
+                                  ref={(el) => { if (el && document.activeElement !== el) { el.focus(); el.select(); } }}
                                   placeholder="Preferred name"
-                                  style={{ maxWidth: '120px' }}
+                                  style={{ maxWidth: '120px', backgroundColor: document.documentElement.getAttribute('data-theme') === 'dark' ? '#0d1117' : '#fff', color: document.documentElement.getAttribute('data-theme') === 'dark' ? '#c9d1d9' : '#212529', border: '1px solid #58a6ff' }}
                                 />
                               </div>
                             ) : (
@@ -2397,6 +2433,7 @@ const SessionDetail = () => {
                       ))}
                     </tbody>
                   </table>
+                </div>
                 </div>
               ) : (
                 <div className="text-center py-4">
