@@ -98,10 +98,13 @@ export function getTodayDate() {
   const tz = getAppTimezone();
   const now = new Date();
   if (tz) {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-    return parts; // en-CA locale gives YYYY-MM-DD format
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
   }
-  return now.toISOString().split('T')[0];
+  // Fallback: use local browser timezone, not UTC
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
 }
 
 /**

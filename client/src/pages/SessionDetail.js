@@ -2242,7 +2242,7 @@ const SessionDetail = () => {
               {/* Participants List */}
               {sessionData.participants && sessionData.participants.length > 0 ? (
                 <div>
-                  <div className="mb-2">
+                  <div className="mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div className="input-group input-group-sm" style={{ maxWidth: '300px' }}>
                       <span className="input-group-text"><Search size={14} /></span>
                       <input
@@ -2258,6 +2258,28 @@ const SessionDetail = () => {
                         </button>
                       )}
                     </div>
+                    {/* Group rotation checklist — synced with net script */}
+                    {(() => {
+                      const groups = ['Alpha – Delta', 'Echo – Hotel', 'India – Lima', 'Mike – Papa', 'Quebec – Tango', 'Uniform – Zulu'];
+                      const tz = getAppTimezone();
+                      const scriptDate = parseDateLocal(sessionData?.session_date);
+                      const dn = scriptDate.toLocaleDateString('en-US', { weekday: 'long', ...(tz ? { timeZone: tz } : {}) });
+                      const dsi = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 0 };
+                      const si = dsi[dn] || 0;
+                      return (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                          {[1,2,3,4,5,6].map(i => {
+                            const gn = groups[(si + i - 1) % 6];
+                            return (
+                              <label key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', cursor: 'pointer', fontSize: '0.8rem' }}>
+                                <input type="checkbox" checked={groupAck[i] || false} onChange={() => setGroupAck(prev => ({ ...prev, [i]: !prev[i] }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
+                                <span style={{ textDecoration: groupAck[i] ? 'line-through' : 'none', opacity: groupAck[i] ? 0.5 : 1 }}>{gn}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 <div className="table-container">
                   <table className="table">

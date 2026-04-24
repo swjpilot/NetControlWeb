@@ -443,7 +443,7 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
     
   } catch (error) {
     console.error('Update session error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

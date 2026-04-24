@@ -5,7 +5,7 @@ const router = express.Router();
 const db = require('../database/postgres-js-db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'netcontrol-secret-key-change-in-production';
-const JWT_EXPIRES_IN = '7d';
+const JWT_EXPIRES_IN = '36h';
 
 // Login
 router.post('/login', async (req, res) => {
