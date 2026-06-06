@@ -286,15 +286,20 @@ const SessionDetail = () => {
       );
       
       if (!existingOperator) {
+        // Reset manual entry on each new input so lookup can re-trigger
+        setShowManualEntry(false);
         const timeoutId = setTimeout(() => {
-          console.log('Auto-triggering QRZ lookup for:', callSignOnly);
-          qrzLookupMutation.mutate(callSignOnly.toUpperCase());
+          // Only lookup if mutation isn't already running
+          if (!qrzLookupMutation.isLoading) {
+            console.log('Auto-triggering QRZ lookup for:', callSignOnly);
+            qrzLookupMutation.mutate(callSignOnly.toUpperCase());
+          }
         }, 2000);
         
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [callSignOnly, operators, selectedOperator, qrzLookupData, qrzLookupMutation]);
+  }, [callSignOnly, operators, selectedOperator, qrzLookupData]);
 
   // Filter FROM operators for traffic form
   useEffect(() => {
@@ -1283,7 +1288,7 @@ const SessionDetail = () => {
         const formTime = new Date();
         formTime.setHours(h, m, s || 0, 0);
         const diff = Math.abs(now - formTime);
-        if (diff < 2000) {
+        if (diff < 3000) {
           participantForm.setValue('check_in_time', now.toTimeString().slice(0, 8));
         }
       }

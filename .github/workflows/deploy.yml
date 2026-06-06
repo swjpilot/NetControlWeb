@@ -1,0 +1,78 @@
+name: Deploy to Elastic Beanstalk
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build client
+        working-directory: client
+        run: npm run build
+
+      - name: Generate version file
+        run: |
+          TIMESTAMP=$(date +"%y%m%d_%H%M%S")
+          cat > version.js << EOF
+          // Auto-generated version file
+          const version = {
+            major: '1.2',
+            build: '${TIMESTAMP}',
+            timestamp: '$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")',
+            environment: process.env.NODE_ENV || 'production',
+            features: ['Net Scheduling', 'FCC Lambda Integration', 'Pre-Check-In', 'QRZ Lookup', 'PostgreSQL Database']
+          };
+          module.exports = version;
+          EOF
+
+      - name: Create deployment package
+        run: |
+          TIMESTAMP=$(date +"%y%m%d_%H%M%S")
+          ZIP_FILE="app-${TIMESTAMP}.zip"
+          
+          mkdir -p deploy_package
+          cp -r server deploy_package/
+          mkdir -p deploy_package/client
+          cp -r client/src deploy_package/client/
+          cp -r client/public deploy_package/client/
+          cp client/package.json deploy_package/client/
+          cp client/package-lock.json deploy_package/client/ 2>/dev/null || true
+          cp -r client/build deploy_package/client/
+          cp package.json package-lock.json version.js deploy_package/
+          cp -r .ebextensions deploy_package/
+          cp .ebignore deploy_package/ 2>/dev/null || true
+          cp Procfile deploy_package/ 2>/dev/null || true
+          
+          cd deploy_package && zip -r -q "../${ZIP_FILE}" .
+          cd ..
+          echo "ZIP_FILE=${ZIP_FILE}" >> $GITHUB_ENV
+          echo "VERSION_LABEL=app-${TIMESTAMP}" >> $GITHUB_ENV
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: netcontrol-web
+          environment_name: netcontrol-prod
+          version_label: ${{ env.VERSION_LABEL }}
+          region: us-east-1
+          deployment_package: ${{ env.ZIP_FILE }}
+          wait_for_environment_recovery: 120

@@ -1,14 +1,14 @@
 {
   "files": {
     "main.css": "/static/css/main.d37f96d8.css",
-    "main.js": "/static/js/main.83cac112.js",
+    "main.js": "/static/js/main.574ac403.js",
     "static/media/HamRadio.jpeg": "/static/media/HamRadio.2c4fd2840d010cb1d99e.jpeg",
     "index.html": "/index.html",
     "main.d37f96d8.css.map": "/static/css/main.d37f96d8.css.map",
-    "main.83cac112.js.map": "/static/js/main.83cac112.js.map"
+    "main.574ac403.js.map": "/static/js/main.574ac403.js.map"
   },
   "entrypoints": [
     "static/css/main.d37f96d8.css",
-    "static/js/main.83cac112.js"
+    "static/js/main.574ac403.js"
   ]
 }
