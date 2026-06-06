@@ -25,6 +25,8 @@ jobs:
 
       - name: Build client
         working-directory: client
+        env:
+          CI: false
         run: npm run build
 
       - name: Generate version file
