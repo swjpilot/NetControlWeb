@@ -231,10 +231,20 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, role, callSign, name, phoneNumber, active, forcePasswordChange } = req.body;
+    const { username, email, role, callSign, name, phoneNumber, active, forcePasswordChange } = req.body;
     
     if (role && !['user', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
+    }
+    
+    // Check if username already exists for different user (if provided)
+    if (username) {
+      const existingUsername = await db.sql`
+        SELECT id FROM users WHERE username = ${username} AND id != ${id}
+      `;
+      if (existingUsername.length > 0) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
     }
     
     // Check if email already exists for different user (if provided)
@@ -248,10 +258,19 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
     
+    // Get current user data to preserve fields not being updated
+    const currentUser = await db.sql`SELECT username FROM users WHERE id = ${id}`;
+    if (currentUser.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const updatedUsername = username || currentUser[0].username;
+    
     let result;
     try {
       result = await db.sql`
         UPDATE users SET
+          username = ${updatedUsername},
           email = ${email || null},
           role = ${role || 'user'},
           call_sign = ${callSign || null},
@@ -268,6 +287,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       if (error.message && error.message.includes('phone_number')) {
         result = await db.sql`
           UPDATE users SET
+            username = ${updatedUsername},
             email = ${email || null},
             role = ${role || 'user'},
             call_sign = ${callSign || null},

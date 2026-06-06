@@ -142,6 +142,7 @@ const UserManagement = () => {
       updateUserMutation.mutate({
         userId: editingUser.id,
         userData: {
+          username: data.username,
           email: data.email,
           role: data.role,
           callSign: data.callSign,
@@ -217,17 +218,16 @@ const UserManagement = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">
-                    Username {!editingUser && '*'}
+                    Username *
                   </label>
                   <input
                     type="text"
                     className={`form-control ${errors.username ? 'error' : ''}`}
                     placeholder="Enter username"
-                    readOnly={!!editingUser}
-                    required={!editingUser}
+                    required
                     {...register('username', { 
-                      required: editingUser ? false : 'Username is required',
-                      minLength: editingUser ? undefined : {
+                      required: 'Username is required',
+                      minLength: {
                         value: 3,
                         message: 'Username must be at least 3 characters'
                       }
@@ -235,9 +235,6 @@ const UserManagement = () => {
                   />
                   {errors.username && (
                     <div className="form-error">{errors.username.message}</div>
-                  )}
-                  {editingUser && (
-                    <small className="text-muted">Username cannot be changed</small>
                   )}
                 </div>
                 
