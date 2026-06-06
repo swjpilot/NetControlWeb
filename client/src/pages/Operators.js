@@ -208,7 +208,7 @@ const Operators = () => {
     setValue('preferred_name', operator.preferred_name || '');
     setValue('preferred_location', operator.preferred_location || '');
     setValue('street', operator.street || '');
-    setValue('location', operator.location || '');
+    setValue('location', operator.city && operator.state ? `${operator.city}, ${operator.state}` : operator.city || operator.state || '');
     setValue('comment', operator.comment || '');
     setValue('class', operator.class || '');
     setValue('grid', operator.grid || '');
