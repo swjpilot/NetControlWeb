@@ -325,6 +325,87 @@ class Database {
         console.log('Migration: Unique constraint migration failed (may already exist):', migrationError.message);
       }
 
+      // Alternate Net Controller tables
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS alternate_session_logs (
+          id SERIAL PRIMARY KEY,
+          session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          call_sign VARCHAR(20) NOT NULL,
+          name VARCHAR(255),
+          join_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          leave_time TIMESTAMP,
+          status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'departed', 'completed')),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS alternate_session_participants (
+          id SERIAL PRIMARY KEY,
+          alternate_log_id INTEGER NOT NULL REFERENCES alternate_session_logs(id) ON DELETE CASCADE,
+          session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          operator_id INTEGER REFERENCES operators(id),
+          call_sign VARCHAR(20) NOT NULL,
+          name VARCHAR(255),
+          check_in_time TIME,
+          check_out_time TIME,
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS alternate_session_traffic (
+          id SERIAL PRIMARY KEY,
+          alternate_log_id INTEGER NOT NULL REFERENCES alternate_session_logs(id) ON DELETE CASCADE,
+          session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          from_call VARCHAR(20) NOT NULL,
+          to_call VARCHAR(20) NOT NULL,
+          message_number VARCHAR(50),
+          precedence VARCHAR(20) DEFAULT 'Routine',
+          message_text TEXT,
+          time_received TIME,
+          handled_by VARCHAR(20),
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS comparison_reports (
+          id SERIAL PRIMARY KEY,
+          session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          alternate_log_id INTEGER NOT NULL REFERENCES alternate_session_logs(id) ON DELETE CASCADE,
+          generated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          primary_total_checkins INTEGER NOT NULL DEFAULT 0,
+          primary_total_traffic INTEGER NOT NULL DEFAULT 0,
+          alternate_total_checkins INTEGER NOT NULL DEFAULT 0,
+          alternate_total_traffic INTEGER NOT NULL DEFAULT 0,
+          match_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+          total_discrepancies INTEGER NOT NULL DEFAULT 0,
+          discrepancies JSONB NOT NULL DEFAULT '[]',
+          summary JSONB NOT NULL DEFAULT '{}',
+          comparison_scope_start TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      // Alternate controller indexes
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_session_logs_session ON alternate_session_logs(session_id)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_session_logs_user ON alternate_session_logs(user_id)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_session_logs_status ON alternate_session_logs(status)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_participants_log ON alternate_session_participants(alternate_log_id)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_participants_session ON alternate_session_participants(session_id)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_participants_call ON alternate_session_participants(call_sign)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_traffic_log ON alternate_session_traffic(alternate_log_id)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_traffic_session ON alternate_session_traffic(session_id)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_alt_traffic_msg_num ON alternate_session_traffic(message_number, from_call)`;
+      await this.sql`CREATE INDEX IF NOT EXISTS idx_comparison_reports_session ON comparison_reports(session_id)`;
+
       // Check if default admin user exists
       const userCount = await this.sql`SELECT COUNT(*) as count FROM users`;
       
@@ -387,7 +468,10 @@ class Database {
         // Security settings
         ['session_timeout', '24', 'Session timeout in hours'],
         ['require_password_change', 'false', 'Require password change on first login'],
-        ['min_password_length', '6', 'Minimum password length']
+        ['min_password_length', '6', 'Minimum password length'],
+        
+        // Feature settings
+        ['alternate_controller_enabled', 'false', 'Enable alternate net controller dual-logging feature']
       ];
 
       for (const [key, value, description] of defaultSettings) {

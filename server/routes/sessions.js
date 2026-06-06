@@ -439,7 +439,34 @@ router.put('/:id', authenticateToken, requireWrite, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
     
-    res.json(result[0]);
+    // Check for alternate controller log and generate comparison if session is ending
+    let comparisonReport = null;
+    if (end_time) {
+      try {
+        const { generateComparisonReport } = require('./alternate-controller');
+        const altLogs = await db.sql`
+          SELECT * FROM alternate_session_logs 
+          WHERE session_id = ${id} AND status IN ('active', 'departed')
+          ORDER BY created_at DESC LIMIT 1
+        `;
+        if (altLogs.length > 0) {
+          // Mark alternate log as completed
+          await db.sql`
+            UPDATE alternate_session_logs 
+            SET status = 'completed', 
+                leave_time = COALESCE(leave_time, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ${altLogs[0].id}
+          `;
+          comparisonReport = await generateComparisonReport(parseInt(id), altLogs[0]);
+        }
+      } catch (altError) {
+        console.error('Alternate controller comparison failed (non-fatal):', altError.message);
+        // Continue — primary session update succeeds regardless
+      }
+    }
+
+    res.json({ ...result[0], comparisonReport });
     
   } catch (error) {
     console.error('Update session error:', error);

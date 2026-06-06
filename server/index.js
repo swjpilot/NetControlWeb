@@ -17,6 +17,7 @@ const preCheckInRoutes = require('./routes/preCheckIn-postgres-js');
 const echolinkRoutes = require('./routes/echolink');
 const schedulesRoutes = require('./routes/schedules');
 const backupRoutes = require('./routes/backup');
+const alternateControllerRoutes = require('./routes/alternate-controller');
 const { startScheduler } = require('./scheduler/monthlyReport');
 const { startBackupScheduler } = require('./scheduler/backupScheduler');
 
@@ -88,6 +89,7 @@ app.use('/api/pre-checkin', preCheckInRoutes);
 app.use('/api/echolink', echolinkRoutes);
 app.use('/api/schedules', schedulesRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/alternate-controller', alternateControllerRoutes);
 
 // Version endpoint
 app.get('/api/version', (req, res) => {

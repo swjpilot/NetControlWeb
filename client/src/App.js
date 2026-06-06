@@ -24,6 +24,7 @@ import SessionDetail from './pages/SessionDetail';
 import QuickSession from './pages/QuickSession';
 import Reports from './pages/Reports';
 import NetSchedules from './pages/NetSchedules';
+import ComparisonReport from './pages/ComparisonReport';
 import Profile from './pages/Profile';
 import { initializeMobileUtils } from './utils/mobileUtils';
 import './App.css';
@@ -71,6 +72,7 @@ function App() {
                           <Route path="/sessions" element={<Sessions />} />
                           <Route path="/sessions/quick" element={<QuickSession />} />
                           <Route path="/sessions/:id" element={<SessionDetail />} />
+                          <Route path="/sessions/:id/comparison" element={<ComparisonReport />} />
                           <Route path="/schedules" element={<NetSchedules />} />
                           <Route path="/reports" element={<Reports />} />
                           <Route path="/fcc" element={<FCCDatabase />} />
