@@ -22,16 +22,16 @@ echo "🔄 Updating version..."
 cat > version.js << EOF
 // Auto-generated version file
 const version = {
-  major: '1.5',
+  major: '2.1',
   build: '${TIMESTAMP}',
   timestamp: '$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")',
   environment: process.env.NODE_ENV || 'production',
-  features: ['Backup/Restore', 'Password Reset', 'Readonly Role', 'NC Statistics', 'Net Scheduling', 'Pre-Check-In', 'QRZ Lookup', 'PostgreSQL Database']
+  features: ['Alternate Net Controller', 'Net Scheduling', 'Preferred Location', 'Backup/Restore', 'Password Reset', 'Pre-Check-In', 'QRZ Lookup', 'PostgreSQL Database']
 };
 module.exports = version;
 EOF
 
-echo "✅ Version updated to 1.5.0 (build ${TIMESTAMP})"
+echo "✅ Version updated to 2.1 (build ${TIMESTAMP})"
 
 # Create deployment package
 echo "📦 Creating deployment package..."
@@ -85,7 +85,7 @@ aws elasticbeanstalk create-application-version \
     --application-name "${APP_NAME}" \
     --version-label "${VERSION_LABEL}" \
     --source-bundle S3Bucket="${S3_BUCKET}",S3Key="${ZIP_FILE}" \
-    --description "NetControl v1.5.0 - Build ${TIMESTAMP}" \
+    --description "NetControl v2.1 - Build ${TIMESTAMP}" \
     --no-auto-create-application
 
 echo "✅ Application version created"
@@ -126,15 +126,12 @@ echo "🌐 Application URLs:"
 echo "   https://netcontrol-prod.eba-tu7jpbdw.us-east-1.elasticbeanstalk.com"
 echo "   https://netcontrol.hamsunite.org"
 echo ""
-echo "📝 What's New in v1.5.0:"
-echo "   ✅ Backup/Restore with S3 integration"
-echo "   ✅ Forgot password email reset flow"
-echo "   ✅ Read-only user role"
-echo "   ✅ NC Statistics report"
-echo "   ✅ Net script pop-out with group checklist"
-echo "   ✅ Participant search and pre-check-in improvements"
-echo "   ✅ Application timezone setting"
-echo "   ✅ QRZ session auto-refresh on expiry"
+echo "📝 What's New in v2.1:"
+echo "   ✅ Alternate Net Controller dual-logging & comparison reports"
+echo "   ✅ Preferred Location override for operators"
+echo "   ✅ Monthly ordinal weekday scheduling (1st Friday, etc.)"
+echo "   ✅ GitHub Actions CI/CD auto-deploy"
+echo "   ✅ Admin username editing"
 echo ""
 echo "💡 To view logs:"
 echo "   aws logs tail /aws/elasticbeanstalk/${ENV_NAME}/var/log/eb-engine.log --follow --profile ${PROFILE} --region ${REGION}"

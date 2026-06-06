@@ -35,11 +35,11 @@ jobs:
           cat > version.js << EOF
           // Auto-generated version file
           const version = {
-            major: '1.2',
+            major: '2.1',
             build: '${TIMESTAMP}',
             timestamp: '$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")',
             environment: process.env.NODE_ENV || 'production',
-            features: ['Net Scheduling', 'FCC Lambda Integration', 'Pre-Check-In', 'QRZ Lookup', 'PostgreSQL Database']
+            features: ['Alternate Net Controller', 'Net Scheduling', 'Preferred Location', 'Backup/Restore', 'Password Reset', 'Pre-Check-In', 'QRZ Lookup', 'PostgreSQL Database']
           };
           module.exports = version;
           EOF
