@@ -17,7 +17,8 @@ import {
   Send,
   Link,
   Download,
-  Upload
+  Upload,
+  ToggleLeft
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTheme } from '../contexts/ThemeContext';
@@ -40,6 +41,7 @@ const Settings = () => {
   const uiForm = useForm();
   const securityForm = useForm();
   const integrationForm = useForm();
+  const featuresForm = useForm();
 
   // Map tabs to their respective forms
   const tabForms = {
@@ -49,7 +51,8 @@ const Settings = () => {
     database: databaseForm,
     ui: uiForm,
     security: securityForm,
-    integration: integrationForm
+    integration: integrationForm,
+    features: featuresForm
   };
 
   // Get current form based on active tab
@@ -65,7 +68,8 @@ const Settings = () => {
         const boolKeys = new Set([
           'smtp_secure', 'smtp_starttls', 'smtp_no_auth',
           'auto_backup_enabled', 'auto_backup_s3_enabled',
-          'require_password_change', 'monthly_report_enabled'
+          'require_password_change', 'monthly_report_enabled',
+          'alternate_controller_enabled'
         ]);
 
         // Populate all forms with current settings
@@ -220,7 +224,8 @@ const Settings = () => {
       database: ['auto_backup_enabled', 'auto_backup_interval', 'backup_time', 'backup_s3_bucket', 'backup_s3_prefix', 'auto_backup_s3_enabled', 'backup_retention_count'],
       ui: ['theme', 'items_per_page'],
       security: ['session_timeout', 'require_password_change', 'min_password_length'],
-      integration: ['precheckin_url', 'netreport_url', 'net_script_template', 'arrl_section_email', 'monthly_report_enabled', 'monthly_report_day', 'monthly_report_time', 'monthly_report_timezone', 'monthly_report_callsign']
+      integration: ['precheckin_url', 'netreport_url', 'net_script_template', 'arrl_section_email', 'monthly_report_enabled', 'monthly_report_day', 'monthly_report_time', 'monthly_report_timezone', 'monthly_report_callsign'],
+      features: ['alternate_controller_enabled']
     };
 
     const relevantFields = tabFields[tab] || [];
@@ -300,7 +305,8 @@ const Settings = () => {
     { id: 'integration', label: 'External Services', icon: Link },
     { id: 'database', label: 'Database', icon: Database },
     { id: 'ui', label: 'User Interface', icon: Palette },
-    { id: 'security', label: 'Security', icon: Shield }
+    { id: 'security', label: 'Security', icon: Shield },
+    { id: 'features', label: 'Features', icon: ToggleLeft }
   ];
 
   if (isLoading) {
@@ -986,6 +992,37 @@ const Settings = () => {
                           <option value="America/Los_Angeles">Pacific</option>
                           <option value="UTC">UTC</option>
                         </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'features' && (
+                  <div>
+                    <h5 className="mb-3">Feature Toggles</h5>
+                    <p className="text-muted small mb-4">Enable or disable optional features for your net operations.</p>
+                    
+                    <div className="card mb-3">
+                      <div className="card-body">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div>
+                            <h6 className="mb-1">Alternate Net Controller</h6>
+                            <p className="text-muted small mb-0">
+                              Allow a second controller to independently log the same session for verification. 
+                              When enabled, users can join an active session as an alternate controller and log 
+                              participants and traffic independently. At session end, a comparison report shows 
+                              discrepancies between the two logs.
+                            </p>
+                          </div>
+                          <div className="form-check form-switch ms-3">
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              role="switch"
+                              {...currentForm.register('alternate_controller_enabled')}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
