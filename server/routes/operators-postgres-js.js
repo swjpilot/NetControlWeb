@@ -58,6 +58,7 @@ router.get('/', authenticateToken, async (req, res) => {
       'SELECT o.id, o.call_sign, o.name, o.email, o.phone, ' +
       'o.address as street, ' +
       'CASE ' +
+        'WHEN o.preferred_location IS NOT NULL THEN o.preferred_location ' +
         'WHEN o.city IS NOT NULL AND o.state IS NOT NULL THEN CONCAT(o.city, \', \', o.state) ' +
         'WHEN o.city IS NOT NULL THEN o.city ' +
         'WHEN o.state IS NOT NULL THEN o.state ' +
@@ -66,6 +67,7 @@ router.get('/', authenticateToken, async (req, res) => {
       'o.city, o.state, o.zip, ' +
       'o.license_class as class, ' +
       'o.preferred_name, ' +
+      'o.preferred_location, ' +
       'o.active, ' +
       'o.notes as comment, ' +
       'o.created_at, o.updated_at, ' +
@@ -109,6 +111,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       SELECT id, call_sign, name, email, phone, 
              address as street, 
              CASE 
+               WHEN preferred_location IS NOT NULL THEN preferred_location
                WHEN city IS NOT NULL AND state IS NOT NULL THEN CONCAT(city, ', ', state)
                WHEN city IS NOT NULL THEN city
                WHEN state IS NOT NULL THEN state
@@ -117,6 +120,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
              city, state, zip, 
              license_class as class, 
              preferred_name,
+             preferred_location,
              active, 
              notes as comment, 
              created_at, updated_at
@@ -150,6 +154,7 @@ router.post('/', authenticateToken, async (req, res) => {
       zip,
       license_class,
       preferred_name,
+      preferred_location,
       notes
     } = req.body;
     
@@ -169,11 +174,11 @@ router.post('/', authenticateToken, async (req, res) => {
     const result = await db.sql`
       INSERT INTO operators (
         call_sign, name, email, phone, address, city, state, zip, 
-        license_class, preferred_name, notes, active
+        license_class, preferred_name, preferred_location, notes, active
       ) VALUES (
         ${call_sign}, ${name || null}, ${email || null}, ${phone || null}, 
         ${address || null}, ${city || null}, ${state || null}, ${zip || null},
-        ${license_class || null}, ${preferred_name || null}, ${notes || null}, true
+        ${license_class || null}, ${preferred_name || null}, ${preferred_location || null}, ${notes || null}, true
       ) RETURNING *
     `;
     
@@ -265,6 +270,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       zip,
       license_class,
       preferred_name,
+      preferred_location,
       notes,
       active
     } = req.body;
@@ -294,6 +300,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         zip = ${zip || null},
         license_class = ${license_class || null},
         preferred_name = ${preferred_name || null},
+        preferred_location = ${preferred_location || null},
         notes = ${notes || null},
         active = ${active !== undefined ? active : true},
         updated_at = CURRENT_TIMESTAMP
@@ -355,6 +362,31 @@ router.patch('/:id/preferred-name', authenticateToken, async (req, res) => {
     res.json(result[0]);
   } catch (error) {
     console.error('Update preferred name error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update operator preferred location only
+router.patch('/:id/preferred-location', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { preferred_location } = req.body;
+    
+    const result = await db.sql`
+      UPDATE operators SET
+        preferred_location = ${preferred_location || null},
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${id}
+      RETURNING id, preferred_location
+    `;
+    
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Operator not found' });
+    }
+    
+    res.json(result[0]);
+  } catch (error) {
+    console.error('Update preferred location error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

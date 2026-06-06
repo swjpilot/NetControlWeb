@@ -267,11 +267,13 @@ router.get('/:id', authenticateToken, async (req, res) => {
              COALESCE(sp.acknowledged, false) as acknowledged,
              o.name as operator_name, 
              o.preferred_name as operator_preferred_name,
+             o.preferred_location as operator_preferred_location,
              o.city as operator_city,
              o.state as operator_state,
              o.license_class,
              COALESCE(sp.name, o.name) as display_name,
              CASE 
+               WHEN o.preferred_location IS NOT NULL THEN o.preferred_location
                WHEN o.city IS NOT NULL AND o.state IS NOT NULL THEN o.city || ', ' || o.state
                WHEN o.city IS NOT NULL THEN o.city
                WHEN o.state IS NOT NULL THEN o.state
@@ -678,6 +680,14 @@ router.patch('/:sessionId/participants/:participantId', authenticateToken, async
     if (preferred_name !== undefined && existing[0].operator_id) {
       await db.sql`
         UPDATE operators SET preferred_name = ${preferred_name || null}
+        WHERE id = ${existing[0].operator_id}
+      `;
+    }
+
+    // Update preferred_location on the operator record if provided
+    if (req.body.preferred_location !== undefined && existing[0].operator_id) {
+      await db.sql`
+        UPDATE operators SET preferred_location = ${req.body.preferred_location || null}
         WHERE id = ${existing[0].operator_id}
       `;
     }

@@ -57,6 +57,8 @@ const SessionDetail = () => {
   const [showNetScript, setShowNetScript] = useState(false);
   const [editingPreferredName, setEditingPreferredName] = useState(null);
   const [preferredNameValue, setPreferredNameValue] = useState('');
+  const [editingPreferredLocation, setEditingPreferredLocation] = useState(null);
+  const [preferredLocationValue, setPreferredLocationValue] = useState('');
   const [groupAck, setGroupAck] = useState({1: false, 2: false, 3: false, 4: false, 5: false, 6: false});
   const [participantSearch, setParticipantSearch] = useState('');
   const [elapsedTime, setElapsedTime] = useState('');
@@ -2404,13 +2406,56 @@ const SessionDetail = () => {
                               </div>
                             )}
                           </td>
-                          <td>
-                            {(participant.display_location || participant.operator_location) && (
-                              <div className="d-flex align-items-center">
-                                <MapPin size={12} className="text-muted me-1" />
-                                <div className="small text-muted">
-                                  {participant.display_location || participant.operator_location}
-                                </div>
+                          <td onClick={(e) => {
+                            e.stopPropagation();
+                            if (participant.operator_id) {
+                              setEditingPreferredLocation(participant.id);
+                              setPreferredLocationValue(participant.operator_preferred_location || participant.display_location || '');
+                            }
+                          }}>
+                            {editingPreferredLocation === participant.id ? (
+                              <div className="d-flex align-items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={preferredLocationValue}
+                                  onChange={(e) => setPreferredLocationValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      patchParticipantMutation.mutate({ participantId: participant.id, data: { preferred_location: preferredLocationValue } });
+                                      setEditingPreferredLocation(null);
+                                    }
+                                    if (e.key === 'Escape') setEditingPreferredLocation(null);
+                                  }}
+                                  onBlur={() => {
+                                    patchParticipantMutation.mutate({ participantId: participant.id, data: { preferred_location: preferredLocationValue } });
+                                    setEditingPreferredLocation(null);
+                                  }}
+                                  ref={(el) => { if (el && document.activeElement !== el) { el.focus(); el.select(); } }}
+                                  placeholder="Preferred location"
+                                  style={{ maxWidth: '140px', backgroundColor: document.documentElement.getAttribute('data-theme') === 'dark' ? '#0d1117' : '#fff', color: document.documentElement.getAttribute('data-theme') === 'dark' ? '#c9d1d9' : '#212529', border: '1px solid #58a6ff' }}
+                                />
+                              </div>
+                            ) : (
+                              <div>
+                                {participant.operator_preferred_location && (
+                                  <div className="d-flex align-items-center">
+                                    <MapPin size={12} className="text-primary me-1" />
+                                    <span className="small text-primary">{participant.operator_preferred_location}</span>
+                                  </div>
+                                )}
+                                {(participant.display_location || participant.operator_location) && (
+                                  <div className="d-flex align-items-center">
+                                    <MapPin size={12} className="text-muted me-1" />
+                                    <span className={`small ${participant.operator_preferred_location ? 'text-muted' : ''}`}>
+                                      {participant.display_location || participant.operator_location}
+                                    </span>
+                                  </div>
+                                )}
+                                {participant.operator_id && !participant.operator_preferred_location && !participant.display_location && (
+                                  <div className="small text-muted" style={{ cursor: 'pointer', fontStyle: 'italic' }}>click to set location</div>
+                                )}
                               </div>
                             )}
                           </td>

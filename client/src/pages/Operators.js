@@ -181,6 +181,7 @@ const Operators = () => {
       call_sign: (data.callSign || '').toUpperCase(),
       name: data.name || '',
       preferred_name: data.preferred_name || '',
+      preferred_location: data.preferred_location || '',
       email: data.email || '',
       phone: data.phone || '',
       address: data.street || '',
@@ -205,6 +206,7 @@ const Operators = () => {
     setValue('callSign', operator.call_sign);
     setValue('name', operator.name || '');
     setValue('preferred_name', operator.preferred_name || '');
+    setValue('preferred_location', operator.preferred_location || '');
     setValue('street', operator.street || '');
     setValue('location', operator.location || '');
     setValue('comment', operator.comment || '');
@@ -479,6 +481,15 @@ const Operators = () => {
                     className="form-control"
                     placeholder="City, State"
                     {...register('location')}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Preferred Location</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g., Downtown, Westside, etc."
+                    {...register('preferred_location')}
                   />
                 </div>
               </div>

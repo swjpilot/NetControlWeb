@@ -213,6 +213,14 @@ class Database {
         console.log('Migration note (monthly ordinal columns):', error.message);
       }
 
+      // Migration: Add preferred_location column to operators
+      try {
+        await this.sql`ALTER TABLE operators ADD COLUMN IF NOT EXISTS preferred_location VARCHAR(255)`;
+        console.log('Migration: Added preferred_location column to operators table');
+      } catch (error) {
+        console.log('Migration note (preferred_location):', error.message);
+      }
+
       // Net schedule assignments - who is assigned to run each scheduled net
       await this.sql`
         CREATE TABLE IF NOT EXISTS net_schedule_assignments (
