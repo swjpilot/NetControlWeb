@@ -66,6 +66,8 @@ jobs:
           cd ..
           echo "ZIP_FILE=${ZIP_FILE}" >> $GITHUB_ENV
           echo "VERSION_LABEL=app-${TIMESTAMP}" >> $GITHUB_ENV
+          echo "Created ${ZIP_FILE}"
+          ls -lh "${ZIP_FILE}"
 
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
@@ -77,4 +79,5 @@ jobs:
           version_label: ${{ env.VERSION_LABEL }}
           region: us-east-1
           deployment_package: ${{ env.ZIP_FILE }}
+          existing_bucket_name: elasticbeanstalk-us-east-1-156667292120
           wait_for_environment_recovery: 120
