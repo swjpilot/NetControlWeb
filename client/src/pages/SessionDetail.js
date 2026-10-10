@@ -90,6 +90,9 @@ const SessionDetail = () => {
     licenseClass: ''
   });
   const callSignInputRef = useRef(null);
+  // Holds the intended success message for the next participant-add so the
+  // addParticipantMutation.onSuccess can emit exactly one toast per add.
+  const pendingAddToastRef = useRef(null);
   
   // Traffic form specific states
   const [fromCallSignInput, setFromCallSignInput] = useState('');
@@ -362,7 +365,8 @@ const SessionDetail = () => {
         console.log('Participant added successfully:', response.data);
         queryClient.invalidateQueries(['session', id]);
         queryClient.invalidateQueries('operators-list'); // Refresh operators list too
-        toast.success('Participant added successfully');
+        toast.success(pendingAddToastRef.current || 'Participant added successfully');
+        pendingAddToastRef.current = null;
         
         // Reset form but keep it open for next participant
         participantForm.reset();
@@ -384,6 +388,7 @@ const SessionDetail = () => {
       },
       onError: (error) => {
         console.error('Failed to add participant:', error);
+        pendingAddToastRef.current = null;
         toast.error(error.response?.data?.error || 'Failed to add participant');
         // Reset form for next entry even on error (e.g., duplicate)
         participantForm.reset();
@@ -534,10 +539,9 @@ const SessionDetail = () => {
         
         console.log('Adding participant with new operator ID:', participantData);
         
-        // Add the participant
+        // Add the participant (mutation onSuccess emits the single toast)
+        pendingAddToastRef.current = `${newOperator.call_sign} added to operators database`;
         addParticipantMutation.mutate(participantData);
-        
-        toast.success(`${newOperator.call_sign} added to operators database`);
       },
       onError: (error) => {
         console.error('Failed to create operator:', error);
@@ -563,8 +567,8 @@ const SessionDetail = () => {
                   check_out_time: participantForm.watch('check_out_time'),
                   notes: participantForm.watch('notes')
                 };
+                pendingAddToastRef.current = `Using existing operator record for ${callSign}`;
                 addParticipantMutation.mutate(participantData);
-                toast.success(`Using existing operator record for ${callSign}`);
               } else {
                 // Fallback to call sign only
                 console.log('Fallback to call sign only');
@@ -574,6 +578,7 @@ const SessionDetail = () => {
                   check_out_time: participantForm.watch('check_out_time'),
                   notes: participantForm.watch('notes')
                 };
+                pendingAddToastRef.current = `Added ${callSign} (call sign only)`;
                 addParticipantMutation.mutate(participantData);
               }
             }, 500);
@@ -939,22 +944,11 @@ const SessionDetail = () => {
       );
       
       if (existingOperator) {
-        // If operator exists, select them and add as participant
+        // If operator exists, select them and add as participant.
+        // handleOperatorSelect performs the single addParticipantMutation.mutate,
+        // whose onSuccess emits exactly one toast.
+        pendingAddToastRef.current = `Found existing operator: ${existingOperator.call_sign}`;
         handleOperatorSelect(existingOperator);
-        toast.success(`Found existing operator: ${existingOperator.call_sign}`);
-        
-        // Auto-submit the form after a short delay to allow state updates
-        setTimeout(() => {
-          const formData = {
-            operator_id: existingOperator.id,
-            call_sign: existingOperator.call_sign,
-            check_in_time: participantForm.getValues('check_in_time') || getCurrentTime(),
-            check_out_time: participantForm.getValues('check_out_time') || '',
-            notes: participantForm.getValues('notes') || '',
-            ...flags
-          };
-          onSubmitParticipant(formData);
-        }, 100);
       } else if (qrzLookupData && qrzLookupData.callsign && qrzLookupData.callsign.toUpperCase() === callSign.toUpperCase()) {
         // If we already have QRZ data for this call sign, add as participant
         console.log('Adding participant with existing QRZ data');
@@ -995,8 +989,8 @@ const SessionDetail = () => {
               call_sign: newOperator.call_sign
             };
             
+            pendingAddToastRef.current = `${newOperator.call_sign} added from QRZ data`;
             addParticipantMutation.mutate(updatedParticipantData);
-            toast.success(`${newOperator.call_sign} added from QRZ data`);
           })
           .catch((error) => {
             console.error('Failed to create operator from QRZ:', error);
@@ -1016,18 +1010,18 @@ const SessionDetail = () => {
                     operator_id: existingOperator.id,
                     call_sign: existingOperator.call_sign
                   };
+                  pendingAddToastRef.current = `Using existing operator record for ${callSign}`;
                   addParticipantMutation.mutate(updatedParticipantData);
-                  toast.success(`Using existing operator record for ${callSign}`);
                 } else {
                   // Fallback to call sign only
+                  pendingAddToastRef.current = `Added ${callSign} (call sign only)`;
                   addParticipantMutation.mutate(participantData);
-                  toast.success(`Added ${callSign} (call sign only)`);
                 }
               }, 500);
             } else {
               // Fallback to call sign only
+              pendingAddToastRef.current = `Added ${callSign} (call sign only)`;
               addParticipantMutation.mutate(participantData);
-              toast.success(`Added ${callSign} (call sign only)`);
             }
           });
       } else {
@@ -1207,9 +1201,8 @@ const SessionDetail = () => {
         };
         
         console.log('Adding participant with new operator ID:', participantData);
+        pendingAddToastRef.current = `${newOperator.call_sign} added to operators database`;
         addParticipantMutation.mutate(participantData);
-        
-        toast.success(`${newOperator.call_sign} added to operators database`);
         setShowManualEntry(false);
       })
       .catch((error) => {
@@ -1232,8 +1225,8 @@ const SessionDetail = () => {
                 check_out_time: participantForm.getValues('check_out_time') || '',
                 notes: participantForm.getValues('notes') || ''
               };
+              pendingAddToastRef.current = `Using existing operator record for ${callSign}`;
               addParticipantMutation.mutate(participantData);
-              toast.success(`Using existing operator record for ${callSign}`);
               setShowManualEntry(false);
             }
           }, 500);
